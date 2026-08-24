@@ -7,20 +7,20 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=706d1a4da6d31b1ee3225b688aaa6b0d&libraries=services&autoload=false"></script>
-<link rel="stylesheet" href="../../static/css/common.css">
-<link rel="stylesheet" href="../../static/css/register.css">
+<link rel="stylesheet" th:href="@{/static/css/common.css}">
+<link rel="stylesheet" th:href="@{/static/css/register.css}">
 </head>
 <body>
 
 <header class="main-header" id="mainHeader">
   <div class="logo">
-    <a href="../../index.html"><img src="../../static/images/logo.png" alt="집찾GO"></a>
+    <a th:href="@{/}"><img th:src="@{/static/images/logo.png}" alt="집찾GO"></a>
   </div>
   <button class="menu-btn" id="menuBtn" aria-label="메뉴 열기">
     <span></span><span></span><span></span>
   </button>
   <nav class="top-nav" id="topNav">
-    <a href="../../templates/support/contact.html"><i class="fa-solid fa-headset"></i>고객센터</a>
+    <a th:href="@{/templates/support/contact.html}"><i class="fa-solid fa-headset"></i>고객센터</a>
   </nav>
 </header>
 
@@ -433,19 +433,19 @@
 <footer class="site-footer">
   <div class="footer-top">
     <div class="footer-brand">
-      <a href="../../index.html">
-        <img src="../../static/images/logo.png" alt="집찾GO"></a>
+      <a th:href="@{/}">
+        <img th:src="@{/static/images/logo.png}" alt="집찾GO"></a>
       <div>
         <h2>집찾GO</h2>
         <p>동네를 가장 잘 아는 사람들의 부동산 플랫폼</p>
       </div>
     </div>
     <div class="footer-links">
-      <a href="../../index.html">홈</a>
-      <a href="search.html">매물찾기</a>
-      <a href="register.html">매물 등록</a>
-      <a href="../support/guide.html">이용가이드</a>
-      <a href="../support/contact.html">고객센터</a>
+      <a th:href="@{/}">홈</a>
+      <a th:href="@{/templates/property/search.html}">매물찾기</a>
+      <a th:href="@{/templates/property/register.html}">매물 등록</a>
+      <a th:href="@{/templates/support/guide.html}">이용가이드</a>
+      <a th:href="@{/templates/support/contact.html}">고객센터</a>
     </div>
   </div>
   <div class="footer-info">
