@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <title>
+      집찾GO | AI와 함께 찾는 집
+    </title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+    <link rel="stylesheet" th:href="@{/css/common.css}">
+    <link rel="stylesheet" th:href="@{/css/main.css}">
+  </head>
+  <body>
+    <header class="main-header" id="mainHeader">
+      <a th:href="@{/}" class="logo">
+        <img th:src="@{/images/logo.png}" alt="집찾GO">
+      </a>
+      <button class="menu-btn" id="menuBtn" type="button" aria-label="메뉴 열기" aria-controls="mobileNav" aria-expanded="false">
+        <span>
+        </span>
+        <span>
+        </span>
+        <span>
+        </span>
+      </button>
+      <nav class="top-nav" id="mobileNav">
+        <a class="guest-menu" th:href="@{/member/login}">
+          <i class="ti ti-login">
+          </i>
+          로그인
+        </a>
+        <a class="guest-menu" th:href="@{/member/signup}">
+          <i class="ti ti-user-plus">
+          </i>
+          회원가입
+        </a>
+        <a th:href="@{/support/contact}">
+          <i class="ti ti-headset">
+          </i>
+          고객센터
+        </a>
+        <a class="user-menu" th:href="@{/favorite}">
+          <i class="ti ti-heart">
+          </i>
+          관심매물
+        </a>
+        <a class="user-menu logout-btn" href="#">
+          <i class="ti ti-logout">
+          </i>
+          로그아웃
+        </a>
+      </nav>
+    </header>
+    <main class="main-page">
+      <section class="hero-section">
+        <div class="hero-bg one">
+        </div>
+        <div class="hero-bg two">
+        </div>
+        <div class="hero-content">
+          <p class="hero-badge">
+            <i class="ti ti-messages">
+            </i>
+            대화로 시작하는 집 찾기
+          </p>
+          <h1>
+            AI와 이야기하며
+            <br>
+            <span>
+              나에게 맞는 집을 찾아보세요
+            </span>
+          </h1>
+          <p class="hero-desc">
+            아는 조건부터 편하게 말해 주세요.
+          </p>
+          <div class="ai-search-box">
+            <i class="ti ti-message-chatbot">
+            </i>
+            <input type="text" aria-label="AI에게 첫 메시지 보내기" placeholder="어떤 집을 찾고 있나요?">
+            <button type="button">
+              대화 시작
+              <i class="ti ti-arrow-up-right">
+              </i>
+            </button>
+          </div>
+          <div class="quick-tags">
+            <button type="button">
+              예산부터 정하고 싶어
+            </button>
+            <button type="button">
+              출퇴근이 중요해
+            </button>
+            <button type="button">
+              지역을 추천해 줘
+            </button>
+          </div>
+        </div>
+      </section>
+      <section class="feature-section">
+        <a class="feature-link" th:href="@{/support/service}" target="_blank" rel="noopener noreferrer">
+          <article>
+            <div class="feature-icon">
+              <i class="ti ti-building-estate">
+              </i>
+            </div>
+            <h3>
+              서비스 소개
+            </h3>
+            <p>
+              집찾GO 이용 방법
+            </p>
+          </article>
+        </a>
+        <a class="feature-link" th:href="@{/property/map}" target="_blank" rel="noopener noreferrer">
+          <article>
+            <div class="feature-icon">
+              <i class="ti ti-map-2">
+              </i>
+            </div>
+            <h3>
+              지도 탐색
+            </h3>
+            <p>
+              지역과 생활환경 비교
+            </p>
+          </article>
+        </a>
+        <a class="feature-link" th:href="@{/market/trend}" target="_blank" rel="noopener noreferrer">
+          <article>
+            <div class="feature-icon">
+              <i class="ti ti-chart-line">
+              </i>
+            </div>
+            <h3>
+              부동산 분석
+            </h3>
+            <p>
+              부동산 데이터 확인
+            </p>
+          </article>
+        </a>
+        <a class="feature-link" th:href="@{/property/register}" target="_blank" rel="noopener noreferrer">
+          <article>
+            <div class="feature-icon">
+              <i class="ti ti-home-plus">
+              </i>
+            </div>
+            <h3>
+              매물 등록
+            </h3>
+            <p>
+              간편하게 매물 등록
+            </p>
+          </article>
+        </a>
+      </section>
+    </main>
+    <script th:src="@{/js/common.js}">
+    </script>
+    <script th:src="@{/js/main.js}">
+    </script>
+  </body>
+</html>
+
