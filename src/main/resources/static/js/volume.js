@@ -207,10 +207,7 @@ function getActivityScore(value, rate) {
 }
 
 function getApiBase() {
-  if (window.location.protocol === "file:" || window.location.port !== "3000") {
-    return "http://localhost:3000";
-  }
-  return "";
+  return window.location.protocol === "file:" ? "http://localhost:8080" : "";
 }
 
 function getTargetMonth() {
