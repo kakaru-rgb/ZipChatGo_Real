@@ -21,7 +21,7 @@ function redirectToLoginIfNeeded(event) {
   }
 }
 
-document.querySelectorAll(".feature-link").forEach(link => {
+document.querySelectorAll(".feature-link:not(.public-link)").forEach(link => {
   link.addEventListener("click", redirectToLoginIfNeeded);
 });
 
