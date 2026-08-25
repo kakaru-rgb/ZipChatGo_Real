@@ -36,12 +36,27 @@ faqTabs.forEach(tab => {
   });
 });
 
-document.getElementById("inquiryForm").addEventListener("submit", event => {
+document.getElementById("inquiryForm").addEventListener("submit", async event => {
   event.preventDefault();
   const form = event.currentTarget;
-  const inquiries = JSON.parse(localStorage.getItem("jipchatgoInquiries") || "[]");
-  inquiries.push({ ...Object.fromEntries(new FormData(form)), createdAt: new Date().toISOString() });
-  localStorage.setItem("jipchatgoInquiries", JSON.stringify(inquiries));
-  document.getElementById("formResult").textContent = "문의가 정상적으로 접수되었습니다. 빠르게 확인해 드릴게요.";
-  form.reset();
+  const result = document.getElementById("formResult");
+  const submitButton = form.querySelector("button[type='submit']");
+  submitButton.disabled = true;
+  result.textContent = "문의 내용을 접수하고 있습니다.";
+
+  try {
+    const response = await fetch(form.action, {
+      method: form.method,
+      body: new FormData(form),
+      headers: { Accept: "application/json" }
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.message || "문의 접수에 실패했습니다.");
+    result.textContent = `${payload.message} 빠르게 확인해 드릴게요.`;
+    form.reset();
+  } catch (error) {
+    result.textContent = error.message;
+  } finally {
+    submitButton.disabled = false;
+  }
 });

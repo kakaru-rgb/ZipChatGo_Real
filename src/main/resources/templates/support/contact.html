@@ -106,17 +106,18 @@
       </div>
     </div>
 
-    <form class="inquiry-form" id="inquiryForm">
+    <form class="inquiry-form" id="inquiryForm" action="/api/inquiries" method="post">
+      <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
       <div class="form-row">
         <label>이름<input type="text" name="name" placeholder="이름을 입력해 주세요" required></label>
         <label>이메일<input type="email" name="email" placeholder="answer@example.com" required></label>
       </div>
       <label>문의 유형
-        <select name="type" required><option value="">선택해 주세요</option><option>서비스 이용</option><option>계정 및 로그인</option><option>매물 정보</option><option>오류 신고</option><option>기타</option></select>
+        <select name="type" required><option value="">선택해 주세요</option><option value="서비스 이용">서비스 이용</option><option value="계정 및 로그인">계정 및 로그인</option><option value="매물 정보">매물 정보</option><option value="오류 신고">오류 신고</option><option value="기타">기타</option></select>
       </label>
       <label>문의 제목<input type="text" name="title" placeholder="문의 제목을 입력해 주세요" required maxlength="80"></label>
       <label>문의 내용<textarea name="message" rows="6" placeholder="문의 내용을 자세히 입력해 주세요" required maxlength="1000"></textarea></label>
-      <label class="privacy-check"><input type="checkbox" required><span>문의 처리를 위한 개인정보 수집 및 이용에 동의합니다.</span></label>
+      <label class="privacy-check"><input type="checkbox" name="privacyAgreed" value="true" required><span>문의 처리를 위한 개인정보 수집 및 이용에 동의합니다.</span></label>
       <button class="submit-btn" type="submit">문의 접수하기 <i class="ti ti-send"></i></button>
       <p class="form-result" id="formResult" role="status"></p>
     </form>
