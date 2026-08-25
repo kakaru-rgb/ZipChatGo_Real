@@ -55,7 +55,7 @@ const PROPERTY_MARKER_HEIGHT = 58;
 const MAX_VISIBLE_POI_MARKERS = 500;
 const MAX_BUS_ROUTES_PER_STOP = 30;
 
-const PROPERTY_IMAGE_BASE_PATH = "../../static/data/아파트_공통_이미지";
+const PROPERTY_IMAGE_BASE_PATH = "/data/아파트_공통_이미지";
 const APARTMENT_IMAGE_COUNT = 93;
 const FLOORPLAN_IMAGE_VARIANTS = Object.freeze({
   "전용39": [1, 3, 4, 5, 6, 7, 9],
@@ -126,7 +126,8 @@ loadPois();
 
 async function loadProperties() {
   try {
-    const res = await fetch("../../static/data/properties.json");
+    const res = await fetch("/api/map/properties");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
     allProperties = data
@@ -160,12 +161,14 @@ async function loadProperties() {
 
   } catch (err) {
     console.error("매물 데이터 로드 실패:", err);
+    reportMapDataError("매물 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
   }
 }
 
 async function loadPois() {
   try {
-    const res = await fetch("../../static/data/poi_database.json");
+    const res = await fetch("/api/map/pois");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
     allPois = data
@@ -197,7 +200,19 @@ async function loadPois() {
     }
   } catch (err) {
     console.error("POI 데이터 로드 실패:", err);
+    reportMapDataError("주변 시설 데이터를 불러오지 못했습니다.");
   }
+}
+
+function reportMapDataError(message) {
+  const status = document.getElementById("mapDataStatus");
+  if (!status) return;
+
+  const messages = status.textContent ? status.textContent.split(" ") : [];
+  if (!messages.includes(message)) {
+    status.textContent = status.textContent ? `${status.textContent} ${message}` : message;
+  }
+  status.hidden = false;
 }
 
 function bindEvents() {
