@@ -12,7 +12,9 @@
 </head>
 <body>
   <header class="main-header" id="mainHeader">
-    <a th:href="@{/}" class="logo"><img th:src="@{/images/logo.png}" alt="집찾GO"></a>
+    <a href="../../index.html" th:href="@{/}" class="logo" aria-label="집찾GO 홈으로 이동">
+      <img src="../../static/images/logo.png" th:src="@{/images/logo.png}" alt="집찾GO">
+    </a>
     <button class="menu-btn" id="menuBtn" aria-label="메뉴 열기"><span></span><span></span><span></span></button>
     <nav class="top-nav" id="mobileNav">
       <a th:href="@{/support/contact}"><i class="ti ti-headset"></i> 고객센터</a>
