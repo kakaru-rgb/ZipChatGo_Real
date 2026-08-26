@@ -1,4 +1,4 @@
-package com.onrender.zipchatgo.service;
+package com.onrender.zipchatgo.map;
 
 import java.io.IOException;
 import java.util.Map;

@@ -1,4 +1,4 @@
-package com.onrender.zipchatgo.support;
+package com.onrender.zipchatgo.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
