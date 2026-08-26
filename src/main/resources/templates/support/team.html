@@ -1,45 +1,47 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>프로젝트 팀 소개 | 집챗GO</title>
+  <title>프로젝트 팀 소개 | 집찾GO</title>
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/aos/2.3.4/aos.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
-  <link rel="stylesheet" href="../../static/css/common.css">
-  <link rel="stylesheet" href="../../static/css/team.css">
-  <link rel="stylesheet" href="../../static/css/trend.css">
+  <link rel="stylesheet" href="../../static/css/common.css" th:href="@{/css/common.css}">
+  <link rel="stylesheet" href="../../static/css/team.css" th:href="@{/css/team.css}">
+  <link rel="stylesheet" href="../../static/css/trend.css" th:href="@{/css/trend.css}">
 </head>
 
 <body>
 
 <header class="main-header" id="mainHeader">
-  <a href="../../index.html" class="logo">
-    <img src="../../static/images/logo.png" alt="집챗GO">
+  <a href="../../index.html" th:href="@{/}" class="logo" aria-label="집찾GO 홈으로 이동">
+    <img src="../../static/images/logo.png" th:src="@{/images/logo.png}" alt="집찾GO">
   </a>
 
-  <button class="menu-btn" id="menuBtn">
+  <button class="menu-btn" id="menuBtn" type="button" aria-label="메뉴 열기" aria-controls="mobileNav" aria-expanded="false">
     <span></span>
     <span></span>
     <span></span>
   </button>
 
   <nav class="top-nav" id="mobileNav">
-    <a target="_blank" rel="noopener noreferrer" href="../../templates/member/login.html">
+    <a target="_blank" rel="noopener noreferrer" href="../../templates/member/login.html" th:href="@{/templates/member/login.html}">
       <i class="ti ti-login"></i> 로그인
     </a>
 
-    <a target="_blank" rel="noopener noreferrer" href="../../templates/member/signup.html">
+    <a target="_blank" rel="noopener noreferrer" href="../../templates/member/signup.html" th:href="@{/templates/member/signup.html}">
       <i class="ti ti-user-plus"></i> 회원 가입
     </a>
 
-    <a target="_blank" rel="noopener noreferrer" href="../../templates/support/contact.html">
+    <a target="_blank" rel="noopener noreferrer" href="../../templates/support/contact.html" th:href="@{/support/contact}">
       <i class="ti ti-headset"></i> 고객센터
     </a>
 
-    <a target="_blank" rel="noopener noreferrer" href="../../templates/property/register.html">
+    <a target="_blank" rel="noopener noreferrer" href="../../templates/property/register.html" th:href="@{/properties/register}">
       <i class="ti ti-heart"></i> 문의하기
     </a>
     
@@ -211,7 +213,7 @@
       <div class="members-grid">
         <div class="member-card leader" data-aos="zoom-in">
           <div class="member-photo">
-            <img src="../../static/images/team/mae-joonyoung.jpg" alt="맹준영" onerror="this.src='https://via.placeholder.com/300x300/667eea/ffffff?text=맹준영'">
+            <img src="../../static/images/team/mae-joonyoung.jpg" th:src="@{/images/team/mae-joonyoung.jpg}" alt="맹준영" onerror="this.src='https://via.placeholder.com/300x300/667eea/ffffff?text=맹준영'">
             <div class="photo-overlay"></div>
           </div>
           <div class="member-info">
@@ -236,7 +238,7 @@
 
         <div class="member-card" data-aos="zoom-in" data-aos-delay="100">
           <div class="member-photo">
-            <img src="../../static/images/team/ahn-jongbeom.jpg" alt="안종범" onerror="this.src='https://via.placeholder.com/300x300/764ba2/ffffff?text=안종범'">
+            <img src="../../static/images/team/ahn-jongbeom.jpg" th:src="@{/images/team/ahn-jongbeom.jpg}" alt="안종범" onerror="this.src='https://via.placeholder.com/300x300/764ba2/ffffff?text=안종범'">
             <div class="photo-overlay"></div>
           </div>
           <div class="member-info">
@@ -258,7 +260,7 @@
 
         <div class="member-card" data-aos="zoom-in" data-aos-delay="200">
           <div class="member-photo">
-            <img src="../../static/images/team/lee-seungho.jpg" alt="이승호" onerror="this.src='https://via.placeholder.com/300x300/f093fb/ffffff?text=이승호'">
+            <img src="../../static/images/team/lee-seungho.jpg" th:src="@{/images/team/lee-seungho.jpg}" alt="이승호" onerror="this.src='https://via.placeholder.com/300x300/f093fb/ffffff?text=이승호'">
             <div class="photo-overlay"></div>
           </div>
           <div class="member-info">
@@ -280,7 +282,7 @@
 
         <div class="member-card" data-aos="zoom-in" data-aos-delay="300">
           <div class="member-photo">
-            <img src="../../static/images/team/hwang-sangok.jpg" alt="황상옥" onerror="this.src='https://via.placeholder.com/300x300/4facfe/ffffff?text=황상옥'">
+            <img src="../../static/images/team/hwang-sangok.jpg" th:src="@{/images/team/hwang-sangok.jpg}" alt="황상옥" onerror="this.src='https://via.placeholder.com/300x300/4facfe/ffffff?text=황상옥'">
             <div class="photo-overlay"></div>
           </div>
           <div class="member-info">
@@ -347,19 +349,19 @@
   <div class="footer-inner">
     <div class="footer-brand">
       <a href="../../index.html">
-        <img src="../../static/images/logo.png" alt="집챗GO">
+        <img src="../../static/images/logo.png" th:src="@{/images/logo.png}" alt="집찾GO">
       </a>
       <div>
-        <h2>집챗GO</h2>
+        <h2>집찾GO</h2>
         <p>AI가 조건에 맞는 집을 더 쉽고 빠르게 찾아드립니다.</p>
       </div>
     </div>
 
     <div class="footer-menu">
-      <a href="../../index.html">홈</a>
-      <a href="/market/trend">시장동향</a>
-      <a href="../../templates/property/register.html">매물등록</a>
-      <a href="../../templates/support/contact.html">고객센터</a>
+      <a href="../../index.html" th:href="@{/}">홈</a>
+      <a href="/market/trend" th:href="@{/market/trend}">시장동향</a>
+      <a href="../../templates/property/register.html" th:href="@{/properties/register}">매물등록</a>
+      <a href="../../templates/support/contact.html" th:href="@{/support/contact}">고객센터</a>
     </div>
 
   </div>
@@ -367,21 +369,22 @@
 
   <div class="footer-bottom">
     <p>
-      집챗GO | AI 부동산 추천 플랫폼
+      집찾GO | AI 부동산 추천 플랫폼
       <span>대표: 홍길동</span>
       <span>사업자등록번호: 111-00-005544</span>
       <span>이메일: jipchatgo@email.com</span>
     </p>
 
     <p>
-      Copyright © 2026 집챗GO. All rights reserved.
+      Copyright © 2026 집찾GO. All rights reserved.
     </p>
   </div>
 
 </footer>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/aos/2.3.4/aos.js"></script>
-<script src="../../static/js/common.js"></script>
-<script src="../../static/js/team.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/aos/2.3.4/aos.js" defer></script>
+<script src="../../static/js/common.js" th:src="@{/js/common.js}" defer></script>
+<script src="../../static/js/team.js" th:src="@{/js/team.js}" defer></script>
 </body>
 </html>
