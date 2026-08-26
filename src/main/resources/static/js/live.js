@@ -21,11 +21,14 @@ const liveMap = new naver.maps.Map('liveMap', {
   disableDoubleClickZoom: false
 });
 
-const recommendedHomes = [
+const fallbackHomes = [
   { name: '성수 리버뷰 84㎡', price: '매매 12.8억', lat: 37.5446, lng: 127.0556, pick: true, youtubeId: '2NpswwcViDE' },
   { name: '서울숲 시티뷰 59㎡', price: '전세 7.2억', lat: 37.5483, lng: 127.0447, youtubeId: 'nD4g9J7o-Yc' },
   { name: '왕십리 파크뷰 74㎡', price: '매매 10.4억', lat: 37.5385, lng: 127.0584, youtubeId: 'skvgwoCisMU' }
 ];
+
+let recommendedHomes = fallbackHomes;
+let markers = [];
 
 function focusHome(home, index) {
   activeHome = index;
@@ -48,18 +51,37 @@ function closePropertyVideo() {
   propertyVideoModal.setAttribute('aria-hidden', 'true');
 }
 
-recommendedHomes.forEach((home, index) => {
-  const marker = new naver.maps.Marker({
-    position: new naver.maps.LatLng(home.lat, home.lng),
-    map: liveMap,
-    title: `${home.name} - ${home.price}`
-  });
+function renderHomeMarkers() {
+  markers.forEach(marker => marker.setMap(null));
+  markers = recommendedHomes.map((home, index) => {
+    const marker = new naver.maps.Marker({
+      position: new naver.maps.LatLng(home.lat, home.lng),
+      map: liveMap,
+      title: `${home.name} - ${home.price}`
+    });
 
-  naver.maps.Event.addListener(marker, 'click', () => {
-    focusHome(home, index);
-    openPropertyVideo(home);
+    naver.maps.Event.addListener(marker, 'click', () => {
+      focusHome(home, index);
+      openPropertyVideo(home);
+    });
+    return marker;
   });
-});
+}
+
+async function loadRecommendedHomes() {
+  try {
+    const response = await fetch('/api/live/recommendations');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const homes = await response.json();
+    if (!Array.isArray(homes) || homes.length === 0) throw new Error('추천 매물이 없습니다.');
+    recommendedHomes = homes;
+  } catch (error) {
+    console.warn('추천 매물 API를 사용할 수 없어 데모 데이터를 사용합니다.', error);
+  }
+
+  renderHomeMarkers();
+  focusHome(recommendedHomes[0], 0);
+}
 
 mapRecenter?.addEventListener('click', () => focusHome(recommendedHomes[activeHome], activeHome));
 propertyVideoClose?.addEventListener('click', closePropertyVideo);
@@ -68,7 +90,7 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !propertyVideoModal.hidden) closePropertyVideo();
 });
 
-focusHome(recommendedHomes[0], 0);
+loadRecommendedHomes();
 setInterval(() => {
   const next = (activeHome + 1) % recommendedHomes.length;
   focusHome(recommendedHomes[next], next);
