@@ -15,4 +15,29 @@ public class PageController {
 	public String marketTrend() {
 		return "market/trend";
 	}
+
+	@GetMapping({"/about/service", "/support/service"})
+	public String service() {
+		return "support/service";
+	}
+
+	@GetMapping("/about/team")
+	public String team() {
+		return "support/team";
+	}
+
+	@GetMapping("/support/guide")
+	public String guide() {
+		return "support/guide";
+	}
+
+	@GetMapping("/content/modelhouse")
+	public String modelhouse() {
+		return "support/modelhouse";
+	}
+
+	@GetMapping("/properties/register")
+	public String propertyRegister() {
+		return "property/register";
+	}
 }

@@ -51,7 +51,7 @@
 | 시장동향 상세 | `sale`, `jeonse`, `volume`, `region`, `region-flow`, `rate`, `school`, `traffic`, `ai-report` | 화면·차트 구현 | `/market/{page}` |
 | 고객지원 | `support/guide.html` | 정적 가이드·FAQ | `/support/guide` |
 | 고객지원 | `support/contact.html` | 문의를 localStorage에 저장 | `/support/contact` |
-| 서비스 소개 | `support/Servise.html` | 구현 | `/about/service` |
+| 서비스 소개 | `support/service.html` | 구현 | `/about/service` |
 | 팀 소개 | `support/team.html` | 구현 | `/about/team` |
 | 콘텐츠 | `support/live.html`, `live2.html`, `modelhouse.html` | 구현/일부 API 연결 | `/content/...` |
 | 공지 | `support/notice.html` | 빈 파일 | `/support/notices` |
@@ -475,14 +475,14 @@ Spring Security의 폼 로그인을 유지하는 권장안:
 
 ### 프론트엔드 이전 대상
 
-- `templates/support/Servise.html`
+- `templates/support/service.html`
 - `templates/support/team.html`
-- `servise.css`, `team.css`, `team.js`
+- `service.css`, `team.css`, `team.js`
 - 팀 이미지와 로고
 
 ### 해야 할 작업
 
-1. `Servise.html`을 `service.html` 또는 `about/service.html`로 이름을 정상화한다.
+1. `service.html`을 Spring templates로 사용하고 서비스 URL을 `/about/service`로 통일한다.
 2. 페이지를 Spring templates로 이전하고 CSS·이미지·링크를 Thymeleaf 경로로 변경한다.
 3. 중복 헤더·푸터를 공통 fragment로 교체한다.
 4. 서비스명 `집찾GO` 표기, URL, 메뉴명, 푸터 내용을 전체 페이지와 통일한다.
