@@ -31,6 +31,16 @@ public class PageController {
 		return "support/guide";
 	}
 
+	@GetMapping("/login")
+	public String login() {
+		return "member/login";
+	}
+
+	@GetMapping("/join")
+	public String signup() {
+		return "member/signup";
+	}
+
 	@GetMapping("/content/modelhouse")
 	public String modelhouse() {
 		return "support/modelhouse";
