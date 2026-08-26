@@ -1,8 +1,7 @@
-package com.onrender.zipchatgo.controller;
+package com.onrender.zipchatgo.map;
 
 import java.time.Duration;
 
-import com.onrender.zipchatgo.service.MapDataService;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;

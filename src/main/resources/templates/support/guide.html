@@ -6,14 +6,14 @@
 <title>이용가이드 | 집찾GO</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
-<link rel="stylesheet" th:href="@{/static/css/common.css}">
-<link rel="stylesheet" th:href="@{/static/css/guide.css}">
+<link rel="stylesheet" th:href="@{/css/common.css}">
+<link rel="stylesheet" th:href="@{/css/guide.css}">
 </head>
 <body>
 
 <header class="main-header" id="mainHeader">
   <a th:href="@{/}" class="logo">
-    <img th:src="@{/static/images/logo.png}" alt="집찾GO">
+    <img th:src="@{/images/logo.png}" alt="집찾GO">
   </a>
 
   <button class="menu-btn" id="menuBtn">
@@ -23,9 +23,9 @@
   </button>
 
   <nav class="top-nav" id="mobileNav">
-    <a th:href="@{/templates/member/login.html}"><i class="ti ti-login"></i> 로그인</a>
-    <a th:href="@{/templates/member/signup.html}"><i class="ti ti-user-plus"></i> 회원가입</a>
-    <a th:href="@{/templates/support/contact.html}"><i class="ti ti-headset"></i> 고객센터</a>
+    <a th:href="@{/member/login}"><i class="ti ti-login"></i> 로그인</a>
+    <a th:href="@{/member/signup}"><i class="ti ti-user-plus"></i> 회원가입</a>
+    <a th:href="@{/support/contact}"><i class="ti ti-headset"></i> 고객센터</a>
     <a href="#"><i class="ti ti-heart"></i> 관심매물</a>
   </nav>
 </header>
@@ -112,8 +112,8 @@
           <p><strong>Tip.</strong> 로그인 없이 먼저 둘러보고 싶다면 '게스트로 체험하기' 버튼을 눌러보세요. 시연용 계정으로 주요 기능을 미리 확인할 수 있어요.</p>
         </div>
         <div class="chip-links">
-          <a th:href="@{/templates/member/login.html}"><i class="ti ti-login"></i>로그인 하러가기</a>
-          <a th:href="@{/templates/member/signup.html}"><i class="ti ti-user-plus"></i>회원가입 하러가기</a>
+          <a th:href="@{/member/login}"><i class="ti ti-login"></i>로그인 하러가기</a>
+          <a th:href="@{/member/signup}"><i class="ti ti-user-plus"></i>회원가입 하러가기</a>
         </div>
       </section>
 
@@ -238,7 +238,7 @@
           </li>
         </ol>
         <div class="chip-links">
-          <a th:href="@{/templates/property/register.html}"><i class="ti ti-home-plus"></i>매물 등록 하러가기</a>
+          <a th:href="@{/property/register}"><i class="ti ti-home-plus"></i>매물 등록 하러가기</a>
         </div>
       </section>
 
@@ -270,7 +270,7 @@
       <h3>가이드로 해결되지 않았나요?</h3>
       <p>고객센터에서 담당자에게 직접 문의할 수 있어요.</p>
     </div>
-    <a th:href="@{/templates/support/contact.html}">고객센터 가기 <i class="ti ti-arrow-right"></i></a>
+    <a th:href="@{/support/contact}">고객센터 가기 <i class="ti ti-arrow-right"></i></a>
   </section>
 
 </div>
@@ -286,9 +286,9 @@
     </div>
     <div class="footer-links">
       <a th:href="@{/}">홈</a>
-      <a th:href="@{/templates/support/guide.html}">이용가이드</a>
-      <a th:href="@{/templates/property/register.html}">매물 등록</a>
-      <a th:href="@{/templates/support/contact.html}">고객센터</a>
+      <a th:href="@{/support/guide}">이용가이드</a>
+      <a th:href="@{/property/register}">매물 등록</a>
+      <a th:href="@{/support/contact}">고객센터</a>
       <a href="#">관심매물</a>
     </div>
   </div>
@@ -305,6 +305,6 @@
   <i class="ti ti-arrow-up"></i>
 </button>
 
-<script th:src="@{/static/js/guide.js}"></script>
+<script th:src="@{/js/guide.js}"></script>
 </body>
 </html>
