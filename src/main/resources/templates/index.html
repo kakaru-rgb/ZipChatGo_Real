@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1.0">
@@ -97,7 +97,7 @@
         </div>
       </section>
       <section class="feature-section">
-        <a class="feature-link" th:href="@{/support/service}" target="_blank" rel="noopener noreferrer">
+        <a class="feature-link" th:href="@{/about/service}" target="_blank" rel="noopener noreferrer">
           <article>
             <div class="feature-icon">
               <i class="ti ti-building-estate">
@@ -111,7 +111,7 @@
             </p>
           </article>
         </a>
-        <a class="feature-link" th:href="@{/property/map}" target="_blank" rel="noopener noreferrer">
+        <a class="feature-link public-link" th:href="@{/properties/map}" target="_blank" rel="noopener noreferrer">
           <article>
             <div class="feature-icon">
               <i class="ti ti-map-2">

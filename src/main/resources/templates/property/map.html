@@ -1,17 +1,17 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>부동산 지도 서비스</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
-  <link rel="stylesheet" href="../../static/css/common.css">
-  <link rel="stylesheet" href="../../static/css/map.css" />
+  <link rel="stylesheet" href="/css/common.css" th:href="@{/css/common.css}">
+  <link rel="stylesheet" href="/css/map.css" th:href="@{/css/map.css}" />
 </head>
 <body class="map-page">
   <header class="main-header" id="mainHeader">
-    <a href="../../index.html" class="logo">
-      <img src="../../static/images/logo.png" alt="집찾GO">
+    <a href="/" th:href="@{/}" class="logo">
+      <img src="/images/logo.png" th:src="@{/images/logo.png}" alt="집찾GO">
     </a>
 
     <button class="menu-btn"
@@ -127,6 +127,8 @@
 
     <section id="map"></section>
 
+    <div id="mapDataStatus" class="map-data-status" role="status" aria-live="polite" hidden></div>
+
     <div class="map-right-controls">
       <div class="distance-measure-controls" aria-label="지도 거리 측정 도구">
         <button id="distanceMeasureToggle"
@@ -221,7 +223,7 @@
   <!-- 빠른 클러스터링 라이브러리 -->
   <script src="https://unpkg.com/supercluster@8.0.1/dist/supercluster.min.js"></script>
 
-  <script src="../../static/js/common.js"></script>
-  <script src="../../static/js/map.js"></script>
+  <script src="/js/common.js" th:src="@{/js/common.js}"></script>
+  <script src="/js/map.js" th:src="@{/js/map.js}"></script>
 </body>
 </html>

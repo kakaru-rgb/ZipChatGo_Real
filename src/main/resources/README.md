@@ -78,7 +78,7 @@ Zip-chatGo/
 │   │   ├── register.html              # 매물 등록
 │   │   └── search.html                # 매물 검색 전용 화면(미구현)
 │   └── support/
-│       ├── Servise.html               # 서비스 소개
+│       ├── service.html               # 서비스 소개
 │       ├── guide.html                  # 이용가이드
 │       ├── contact.html                # 고객센터
 │       ├── live.html                   # 추천 매물 LIVE
@@ -168,7 +168,7 @@ Zip-chatGo/
 ## 11. 개선 보완 사항
 
 - 페이지마다 중복된 헤더·푸터와 CSS를 공통 컴포넌트 및 스타일 규칙으로 통합
-- `Servise.html`, `singup.html` 등 파일명과 일부 화면의 `집챗GO` 표기를 `집찾GO`로 일관되게 정리
+- `service.html`, `singup.html` 등 파일명과 일부 화면의 `집챗GO` 표기를 `집찾GO`로 일관되게 정리
 - 비어 있는 링크 대상과 잘못된 상대 경로를 정리하고 GitHub Pages와 로컬 서버에서 동일하게 동작하도록 개선
 - 대용량 매물·이미지 데이터의 지연 로딩, 썸네일 최적화 및 초기 지도 렌더링 성능 개선
 - Naver Maps 클라이언트 키와 공공데이터 인증키를 안전한 환경 설정으로 분리
