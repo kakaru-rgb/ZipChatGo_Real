@@ -3,17 +3,17 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>회원가입 | 집찾GO</title>
+<title>로그인 | 집찾GO</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
-<link rel="stylesheet" th:href="@{/static/css/common.css}">
-<link rel="stylesheet" th:href="@{/static/css/auth.css}">
+<link rel="stylesheet" th:href="@{/css/common.css}">
+<link rel="stylesheet" th:href="@{/css/auth.css}">
 </head>
-<body data-default-tab="signup">
+<body data-default-tab="login">
 
 <header class="main-header" id="mainHeader">
   <a th:href="@{/}" class="logo">
-    <img th:src="@{/static/images/logo.png}" alt="집찾GO">
+    <img th:src="@{/images/logo.png}" alt="집찾GO">
   </a>
 </header>
 
@@ -23,14 +23,14 @@
     <!-- 왼쪽 비주얼 패널 -->
     <aside class="auth-visual">
       <div class="brand">
-        <img th:src="@{/static/images/logo.png}" alt="집찾GO" style="filter:brightness(0) invert(1);">
+        <img th:src="@{/images/logo.png}" alt="집찾GO" style="filter:brightness(0) invert(1);">
         집찾GO
       </div>
 
       <div class="visual-copy">
-        <span class="eyebrow">회원가입</span>
-        <h2>몇 분이면 충분해요,<br>지금 시작하는 부동산 여정</h2>
-        <p>일반회원과 공인중개사 모두 집찾GO에서 시작할 수 있어요.</p>
+        <span class="eyebrow">로그인</span>
+        <h2>AI가 추천하는 내 집,<br>로그인하고 이어가세요</h2>
+        <p>저장해 둔 조건과 관심 매물을 그대로 불러와 드려요.</p>
 
         <div class="keyring" aria-hidden="true">
           <span class="key filled"><i class="ti ti-key"></i></span>
@@ -222,6 +222,6 @@
   <i class="ti ti-arrow-up"></i>
 </button>
 
-<script th:src="@{/static/js/auth.js}"></script>
+<script th:src="@{/js/auth.js}"></script>
 </body>
 </html>
