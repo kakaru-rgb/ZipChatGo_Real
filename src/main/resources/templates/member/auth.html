@@ -9,7 +9,7 @@
 <link rel="stylesheet" th:href="@{/css/common.css}">
 <link rel="stylesheet" th:href="@{/css/auth.css}">
 </head>
-<body data-default-tab="login">
+<body th:attr="data-default-tab=${defaultTab}"></body>
 
 <header class="main-header" id="mainHeader">
   <a th:href="@{/}" class="logo">

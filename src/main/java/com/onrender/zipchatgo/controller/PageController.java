@@ -1,6 +1,7 @@
 package com.onrender.zipchatgo.controller;
 
 import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 
 /**
@@ -18,13 +19,15 @@ public class PageController {
     }
 
     @GetMapping("/member/login")
-    public String login() {
-        return "member/login";
+    public String login(Model model) {
+        model.addAttribute("defaultTab", "login");
+        return "member/auth";
     }
 
     @GetMapping("/member/signup")
-    public String signup() {
-        return "member/signup";
+    public String signup(Model model) {
+        model.addAttribute("defaultTab", "signup");
+        return "member/auth";
     }
 
     @GetMapping("/favorite")
