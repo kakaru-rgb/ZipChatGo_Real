@@ -269,4 +269,40 @@ LLM_PROVIDER = "ollama"
 
 
 
+1단계
+Spring 지도 웹페이지에 Chat UI 추가
+        ↓
+2단계
+별도 ZipChatGo_AI 프로젝트 생성
+
+FastAPI
+POST /chat
+        ↓
+3단계
+로컬에서 두 서버 동시 실행
+Spring :8080
+FastAPI :8000
+        ↓
+4단계
+Chat UI → Spring → FastAPI 연결
+        ↓
+5단계
+지도 Context 전달
+center
+zoom
+bounds
+선택 매물
+        ↓
+6단계
+AI가 지도 내용을 이해하며 대화
+        ↓
+7단계
+매물 검색 Tool 추가
+        ↓
+8단계
+지도 이동/마커 강조 Action 추가
+        ↓
+9단계
+POI / 관심매물 / 가격분석 / RAG 추가
+
 
