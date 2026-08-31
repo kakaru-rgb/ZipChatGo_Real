@@ -50,6 +50,13 @@ body {
   line-height: 1.45;
 }
 
+.map-data-status.is-fallback {
+  border-color: rgba(176, 116, 13, 0.3);
+  color: #79510b;
+  background: rgba(255, 249, 232, 0.97);
+  box-shadow: 0 8px 24px rgba(90, 62, 13, 0.15);
+}
+
 aside {
   grid-area: 1 / 1;
   align-self: start;
@@ -701,6 +708,143 @@ aside.is-detail-open {
 
 .property-price-card.is-primary strong {
   color: #1676dd;
+}
+
+.property-price-history-section {
+  overflow: hidden;
+}
+
+.property-price-history-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.property-price-history-heading h3 {
+  margin: 0 0 4px;
+  color: #26364a;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.property-price-history-heading p {
+  margin: 0;
+  color: #8a98a9;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.property-price-history-period {
+  flex: 0 0 auto;
+  display: flex;
+  padding: 3px;
+  border-radius: 8px;
+  background: #f1f4f8;
+}
+
+.property-price-history-period button {
+  min-width: 35px;
+  height: 27px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #7b899b;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.property-price-history-period button.is-active {
+  background: #fff;
+  color: #202b3a;
+  box-shadow: 0 1px 4px rgba(28, 43, 63, 0.12);
+}
+
+.property-price-history-legend {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 5px;
+  color: #59687a;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.property-price-history-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.property-price-history-legend i {
+  width: 12px;
+  height: 3px;
+  border-radius: 999px;
+  background: #2f6df6;
+}
+
+.property-price-history-legend .volume i {
+  background: #a8ddff;
+}
+
+.property-price-history-chart {
+  min-height: 210px;
+  position: relative;
+}
+
+.property-price-history-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.property-price-history-grid line {
+  stroke: #e8edf3;
+  stroke-width: 1;
+}
+
+.property-price-history-grid text,
+.property-price-history-labels text,
+.property-price-history-volume-label {
+  fill: #7b899b;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.property-price-history-line {
+  fill: none;
+  stroke: #2f6df6;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.property-price-history-points circle {
+  fill: #fff;
+  stroke: #2f6df6;
+  stroke-width: 3;
+}
+
+.property-price-history-bars rect {
+  fill: #a8ddff;
+}
+
+.property-price-history-status {
+  min-height: 210px;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  color: #8a98a9;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.property-price-history-status.is-error {
+  color: #d46767;
 }
 
 .property-facility-list,

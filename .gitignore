@@ -1,6 +1,9 @@
 # Created by https://www.toptal.com/developers/gitignore/api/java,python,visualstudiocode
 # Edit at https://www.toptal.com/developers/gitignore?templates=java,python,visualstudiocode
 
+### personal files ###
+.txt
+
 ### Java ###
 # Compiled class file
 *.class
@@ -39,6 +42,8 @@ __pycache__/
 
 # Distribution / packaging
 .gradle
+.gradle/
+.gradle-work/
 .Python
 bin/
 build/

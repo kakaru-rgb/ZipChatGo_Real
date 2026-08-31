@@ -1,5 +1,5 @@
 const FAVORITE_PROPERTY_STORAGE_KEY = "zipchatgo.favoritePropertyIds";
-const PROPERTY_IMAGE_BASE_PATH = "../../static/data/아파트_공통_이미지";
+const PROPERTY_IMAGE_BASE_PATH = "/data/아파트_공통_이미지";
 const APARTMENT_IMAGE_COUNT = 93;
 
 let allFavoritePageProperties = [];
@@ -11,7 +11,7 @@ window.addEventListener("storage", handleFavoriteStorageChange);
 
 async function initializeFavoritePage() {
   try {
-    const response = await fetch("../../static/data/properties.json");
+    const response = await fetch("/api/map/properties");
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
     const data = await response.json();
@@ -166,7 +166,7 @@ function updateFavoriteSummary() {
 }
 
 function openPropertyOnMap(propertyId) {
-  const mapUrl = new URL("../property/map.html", window.location.href);
+  const mapUrl = new URL("/properties/map", window.location.origin);
   mapUrl.searchParams.set("property_id", String(propertyId));
   window.location.href = mapUrl.href;
 }

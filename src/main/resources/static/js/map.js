@@ -33,6 +33,7 @@ let distanceMeasureTotalLabel = null;
 
 const MOBILE_MAP_MEDIA_QUERY = window.matchMedia("(max-width: 768px)");
 const FAVORITE_PROPERTY_STORAGE_KEY = "zipchatgo.favoritePropertyIds";
+const propertyPriceHistoryCache = new Map();
 let mobileMapView = "map";
 let favoritePropertyIds = loadFavoritePropertyIds();
 
@@ -128,6 +129,7 @@ async function loadProperties() {
   try {
     const res = await fetch("/api/map/properties");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    reportFallbackDataSource(res, "매물");
     const data = await res.json();
 
     allProperties = data
@@ -169,6 +171,7 @@ async function loadPois() {
   try {
     const res = await fetch("/api/map/pois");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    reportFallbackDataSource(res, "주변 시설");
     const data = await res.json();
 
     allPois = data
@@ -212,6 +215,20 @@ function reportMapDataError(message) {
   if (!messages.includes(message)) {
     status.textContent = status.textContent ? `${status.textContent} ${message}` : message;
   }
+  status.hidden = false;
+}
+
+function reportFallbackDataSource(response, dataLabel) {
+  if (response.headers.get("X-Map-Data-Source") !== "fallback-json") return;
+
+  const status = document.getElementById("mapDataStatus");
+  if (!status) return;
+
+  const message = `TiDB 연결 문제로 ${dataLabel} 샘플 데이터를 표시하고 있습니다.`;
+  if (!status.textContent.includes(message)) {
+    status.textContent = status.textContent ? `${status.textContent} ${message}` : message;
+  }
+  status.classList.add("is-fallback");
   status.hidden = false;
 }
 
@@ -1751,6 +1768,9 @@ function renderPropertyDetail(item) {
   const samePyeongSaleItems = samePyeongItems.filter(candidate => candidate.sale_price > 0);
   const complexAveragePrice = getAverageValue(complexSaleItems, "sale_price");
   const samePyeongAveragePrice = getAverageValue(samePyeongSaleItems, "sale_price");
+  const recentThreeMonthItems = getRecentTransactions(samePyeongSaleItems, 3);
+  const recentThreeMonthAveragePrice = getAverageValue(recentThreeMonthItems, "sale_price");
+  const latestTransaction = getLatestTransaction(samePyeongSaleItems);
   const availableAreas = getComplexAreaSummary(sameComplexItems);
   const proximity = getPropertyProximity(item);
   const propertyName = item.title || item.building_name || "매물";
@@ -1791,7 +1811,7 @@ function renderPropertyDetail(item) {
     </section>
 
     <section class="property-detail-section">
-      ${renderDetailSectionHeading("가격 정보", "현재 등록 매물 기준")}
+      ${renderDetailSectionHeading("가격 정보", "최근 12개월 실거래 기준")}
       <div class="property-price-grid">
         ${renderPriceCard(
           `같은 단지 평균 (${complexSaleItems.length.toLocaleString()}건)`,
@@ -1802,8 +1822,37 @@ function renderPropertyDetail(item) {
           `같은 평수 평균 (${samePyeongSaleItems.length.toLocaleString()}건)`,
           formatOptionalPrice(samePyeongAveragePrice)
         )}
-        ${renderPriceCard("평균 실거래가", "")}
-        ${renderPriceCard("최근 실거래가", "")}
+        ${renderPriceCard(
+          `최근 3개월 평균 (${recentThreeMonthItems.length.toLocaleString()}건)`,
+          formatOptionalPrice(recentThreeMonthAveragePrice)
+        )}
+        ${renderPriceCard(
+          latestTransaction
+            ? `최근 실거래가 (${formatContractDate(latestTransaction.contract_date)})`
+            : "최근 실거래가",
+          formatOptionalPrice(latestTransaction?.sale_price)
+        )}
+      </div>
+    </section>
+
+    <section class="property-detail-section property-price-history-section"
+             data-price-history-property-id="${escapeHtml(item.id)}">
+      <div class="property-price-history-heading">
+        <div>
+          <h3>매매가 평균 추이</h3>
+          <p>같은 단지 · 같은 평형 월별 실거래</p>
+        </div>
+        <div class="property-price-history-period" aria-label="조회 기간">
+          <button type="button" data-price-history-years="1">1년</button>
+          <button type="button" class="is-active" data-price-history-years="3">3년</button>
+        </div>
+      </div>
+      <div class="property-price-history-legend" aria-hidden="true">
+        <span class="price"><i></i>매매가</span>
+        <span class="volume"><i></i>거래량</span>
+      </div>
+      <div class="property-price-history-chart" role="img" aria-label="매매가 평균과 거래량 추이">
+        <p class="property-price-history-status">가격 추이를 불러오고 있어요.</p>
       </div>
     </section>
 
@@ -1853,6 +1902,8 @@ function renderPropertyDetail(item) {
       <div class="property-detail-description-slot">${escapeHtml(item.description || "")}</div>
     </section>
   `;
+
+  initializePropertyPriceHistory(item.id);
 }
 
 function renderPropertyMediaSlot(item, propertyName) {
@@ -1919,6 +1970,161 @@ function renderPriceCard(label, value, primary = false) {
       <strong>${renderDetailText(value)}</strong>
     </div>
   `;
+}
+
+function initializePropertyPriceHistory(propertyId) {
+  const section = document.querySelector("[data-price-history-property-id]");
+  if (!section || String(section.dataset.priceHistoryPropertyId) !== String(propertyId)) return;
+
+  section.querySelectorAll("[data-price-history-years]").forEach(button => {
+    button.addEventListener("click", () => {
+      const years = Number(button.dataset.priceHistoryYears);
+      section.querySelectorAll("[data-price-history-years]").forEach(candidate => {
+        candidate.classList.toggle("is-active", candidate === button);
+      });
+      loadPropertyPriceHistory(propertyId, years);
+    });
+  });
+
+  loadPropertyPriceHistory(propertyId, 3);
+}
+
+async function loadPropertyPriceHistory(propertyId, years) {
+  const cacheKey = `${propertyId}:${years}`;
+  const chart = getActivePriceHistoryChart(propertyId);
+  if (!chart) return;
+
+  chart.innerHTML = '<p class="property-price-history-status">가격 추이를 불러오고 있어요.</p>';
+
+  try {
+    let rows = propertyPriceHistoryCache.get(cacheKey);
+    if (!rows) {
+      const response = await fetch(
+        `/api/map/properties/${encodeURIComponent(propertyId)}/price-history?years=${years}`
+      );
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      rows = await response.json();
+      propertyPriceHistoryCache.set(cacheKey, rows);
+    }
+
+    const activeChart = getActivePriceHistoryChart(propertyId);
+    if (!activeChart) return;
+    renderPropertyPriceHistoryChart(activeChart, rows, years);
+  } catch (error) {
+    console.error("매매가 추이를 불러오지 못했습니다:", error);
+    const activeChart = getActivePriceHistoryChart(propertyId);
+    if (activeChart) {
+      activeChart.innerHTML = '<p class="property-price-history-status is-error">가격 추이를 불러오지 못했어요.</p>';
+    }
+  }
+}
+
+function getActivePriceHistoryChart(propertyId) {
+  const section = document.querySelector("[data-price-history-property-id]");
+  if (!section || String(section.dataset.priceHistoryPropertyId) !== String(propertyId)) return null;
+  return section.querySelector(".property-price-history-chart");
+}
+
+function renderPropertyPriceHistoryChart(container, rows, years) {
+  const series = buildMonthlyPriceHistory(rows, years);
+  const tradedMonths = series.filter(item => item.averagePrice > 0);
+
+  if (!tradedMonths.length) {
+    container.innerHTML = '<p class="property-price-history-status">해당 기간의 실거래 내역이 없어요.</p>';
+    return;
+  }
+
+  const width = 380;
+  const height = 240;
+  const left = 48;
+  const right = 12;
+  const top = 12;
+  const priceBottom = 158;
+  const volumeTop = 174;
+  const volumeBottom = 205;
+  const plotWidth = width - left - right;
+  const prices = tradedMonths.map(item => item.averagePrice);
+  const rawMin = Math.min(...prices);
+  const rawMax = Math.max(...prices);
+  const padding = Math.max((rawMax - rawMin) * 0.12, rawMax * 0.03, 1);
+  const minPrice = Math.max(0, rawMin - padding);
+  const maxPrice = rawMax + padding;
+  const maxTrades = Math.max(...series.map(item => item.tradeCount), 1);
+  const x = index => left + (series.length === 1 ? plotWidth / 2 : index * plotWidth / (series.length - 1));
+  const y = price => top + (maxPrice - price) / (maxPrice - minPrice || 1) * (priceBottom - top);
+  const grid = Array.from({ length: 4 }, (_, index) => {
+    const ratio = index / 3;
+    const gridY = top + ratio * (priceBottom - top);
+    const value = maxPrice - ratio * (maxPrice - minPrice);
+    return `<line x1="${left}" y1="${gridY}" x2="${width - right}" y2="${gridY}"/>`
+      + `<text x="${left - 7}" y="${gridY + 4}" text-anchor="end">${escapeHtml(formatChartPrice(value))}</text>`;
+  }).join("");
+  const linePoints = series
+    .map((item, index) => item.averagePrice > 0 ? `${x(index)},${y(item.averagePrice)}` : null)
+    .filter(Boolean)
+    .join(" ");
+  const bars = series.map((item, index) => {
+    if (!item.tradeCount) return "";
+    const barHeight = Math.max(3, item.tradeCount / maxTrades * (volumeBottom - volumeTop));
+    return `<rect x="${x(index) - 2}" y="${volumeBottom - barHeight}" width="4" height="${barHeight}" rx="2">`
+      + `<title>${escapeHtml(formatHistoryTooltip(item))}</title></rect>`;
+  }).join("");
+  const points = series.map((item, index) => {
+    if (!item.averagePrice) return "";
+    return `<circle cx="${x(index)}" cy="${y(item.averagePrice)}" r="4">`
+      + `<title>${escapeHtml(formatHistoryTooltip(item))}</title></circle>`;
+  }).join("");
+  const tickIndexes = [...new Set([0, ...Array.from({ length: 3 }, (_, index) => (
+    Math.round((index + 1) * (series.length - 1) / 4)
+  )), series.length - 1])];
+  const labels = tickIndexes.map(index => (
+    `<text x="${x(index)}" y="228" text-anchor="middle">${escapeHtml(formatHistoryMonth(series[index].month))}</text>`
+  )).join("");
+
+  container.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}" aria-hidden="true">
+      <g class="property-price-history-grid">${grid}</g>
+      <text class="property-price-history-volume-label" x="${left - 7}" y="${volumeTop + 5}" text-anchor="end">거래량</text>
+      <g class="property-price-history-bars">${bars}</g>
+      <polyline class="property-price-history-line" points="${linePoints}"/>
+      <g class="property-price-history-points">${points}</g>
+      <g class="property-price-history-labels">${labels}</g>
+    </svg>
+  `;
+}
+
+function buildMonthlyPriceHistory(rows, years) {
+  const byMonth = new Map((Array.isArray(rows) ? rows : []).map(row => [
+    String(row.month || ""),
+    {
+      averagePrice: Number(row.average_price || 0),
+      tradeCount: Number(row.trade_count || 0)
+    }
+  ]));
+  const monthCount = years * 12;
+  const current = new Date();
+  const start = new Date(current.getFullYear(), current.getMonth() - monthCount + 1, 1);
+
+  return Array.from({ length: monthCount }, (_, index) => {
+    const date = new Date(start.getFullYear(), start.getMonth() + index, 1);
+    const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const value = byMonth.get(month) || {};
+    return { month, averagePrice: value.averagePrice || 0, tradeCount: value.tradeCount || 0 };
+  });
+}
+
+function formatHistoryTooltip(item) {
+  return `${formatHistoryMonth(item.month)}  평균 ${formatOptionalPrice(item.averagePrice) || "-"}  거래 ${item.tradeCount.toLocaleString()}건`;
+}
+
+function formatHistoryMonth(month) {
+  const [year, value] = String(month).split("-");
+  return `${String(year).slice(-2)}.${value}`;
+}
+
+function formatChartPrice(price) {
+  const eok = Number(price) / 100000000;
+  return `${Number(eok.toFixed(eok >= 10 ? 0 : 1))}억`;
 }
 
 function renderDetailText(value) {
@@ -2007,6 +2213,42 @@ function getAverageValue(items, key) {
   if (!values.length) return 0;
 
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function getRecentTransactions(items, months) {
+  const cutoff = new Date();
+  cutoff.setHours(0, 0, 0, 0);
+  cutoff.setMonth(cutoff.getMonth() - months);
+
+  return items.filter(item => {
+    const contractDate = parseContractDate(item.contract_date);
+    return contractDate && contractDate >= cutoff;
+  });
+}
+
+function getLatestTransaction(items) {
+  return items.reduce((latest, item) => {
+    const itemDate = parseContractDate(item.contract_date);
+    if (!itemDate) return latest;
+
+    const latestDate = parseContractDate(latest?.contract_date);
+    return !latestDate || itemDate > latestDate ? item : latest;
+  }, null);
+}
+
+function parseContractDate(value) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return null;
+
+  const date = new Date(`${normalized.slice(0, 10)}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatContractDate(value) {
+  const date = parseContractDate(value);
+  if (!date) return "";
+
+  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function getRoundedPyeong(area) {

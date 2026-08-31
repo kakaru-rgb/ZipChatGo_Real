@@ -1,17 +1,17 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>관심목록 | 집찾GO</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
-  <link rel="stylesheet" href="../../static/css/common.css">
-  <link rel="stylesheet" href="../../static/css/favorite.css">
+  <link rel="stylesheet" href="/css/common.css" th:href="@{/css/common.css}">
+  <link rel="stylesheet" href="/css/favorite.css" th:href="@{/css/favorite.css}">
 </head>
 <body class="favorite-page">
   <header class="main-header" id="mainHeader">
-    <a href="../../index.html" class="logo">
-      <img src="../../static/images/logo.png" alt="집찾GO">
+    <a href="/" th:href="@{/}" class="logo">
+      <img src="/images/logo.png" th:src="@{/images/logo.png}" alt="집찾GO">
     </a>
 
     <button class="menu-btn"
@@ -38,7 +38,7 @@
         <i class="ti ti-headset" aria-hidden="true"></i>
         고객센터
       </a>
-      <a class="user-menu is-current" href="favorite.html" aria-current="page">
+      <a class="user-menu is-current" href="/favorites" th:href="@{/favorites}" aria-current="page">
         <i class="ti ti-heart" aria-hidden="true"></i>
         관심매물
       </a>
@@ -69,7 +69,7 @@
         </span>
         <h2>아직 관심 매물이 없습니다</h2>
         <p>지도에서 마음에 드는 매물의 하트를 눌러 저장해 보세요.</p>
-        <a href="../property/map.html">지도에서 매물 둘러보기</a>
+        <a href="/properties/map" th:href="@{/properties/map}">지도에서 매물 둘러보기</a>
       </section>
     </section>
   </main>
@@ -78,7 +78,7 @@
     <div class="footer-inner">
       <div class="footer-brand">
         <a href="../../index.html">
-          <img src="../../static/images/logo.png" alt="집찾GO">
+          <img src="/images/logo.png" th:src="@{/images/logo.png}" alt="집찾GO">
         </a>
         <div>
           <h2>집찾GO</h2>
@@ -87,7 +87,7 @@
       </div>
       <div class="footer-menu">
         <a href="../../index.html">메인</a>
-        <a href="../property/map.html">지도</a>
+        <a href="/properties/map" th:href="@{/properties/map}">지도</a>
         <a href="../property/register.html">매물 등록</a>
         <a href="../support/Servise.html">서비스 소개</a>
       </div>
@@ -102,7 +102,7 @@
     </div>
   </footer>
 
-  <script src="../../static/js/common.js"></script>
-  <script src="../../static/js/favorite.js"></script>
+  <script src="/js/common.js" th:src="@{/js/common.js}"></script>
+  <script src="/js/favorite.js" th:src="@{/js/favorite.js}"></script>
 </body>
 </html>

@@ -12,7 +12,7 @@ public class MapPageController {
         return "property/map";
     }
 
-    @GetMapping("/templates/property/map.html")
+    @GetMapping({"/templates/property/map.html", "/property/map.html"})
     public RedirectView legacyMap() {
         return new RedirectView("/properties/map");
     }
