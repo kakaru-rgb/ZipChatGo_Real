@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
   <link rel="stylesheet" href="/css/common.css" th:href="@{/css/common.css}">
   <link rel="stylesheet" href="/css/map.css" th:href="@{/css/map.css}" />
+  <link rel="stylesheet" href="/css/ai-chat.css" th:href="@{/css/ai-chat.css}" />
 </head>
 <body class="map-page">
   <header class="main-header" id="mainHeader">
@@ -218,6 +219,71 @@
     </div>
   </main>
 
+  <button id="aiAgentLauncher"
+          class="ai-agent-launcher"
+          type="button"
+          aria-label="AI 에이전트 열기"
+          aria-controls="aiAgentPanel"
+          aria-expanded="false">
+    <span class="ai-agent-brand-icon" data-ai-brand-icon aria-hidden="true"></span>
+    <span>AI 에이전트</span>
+  </button>
+
+  <section id="aiAgentPanel"
+           class="ai-agent-panel"
+           aria-label="AI 에이전트 채팅"
+           aria-hidden="true">
+    <header class="ai-agent-header">
+      <span aria-hidden="true"></span>
+      <div class="ai-agent-title">
+        <strong>AI 에이전트</strong>
+        <span>Beta</span>
+      </div>
+      <button id="aiAgentClose" class="ai-agent-close" type="button" aria-label="AI 에이전트 닫기">
+        <i class="ti ti-x" aria-hidden="true"></i>
+      </button>
+    </header>
+
+    <div id="aiAgentMessages" class="ai-agent-messages" role="log" aria-live="polite">
+      <article class="ai-agent-answer ai-agent-welcome">
+        <span class="ai-agent-brand-icon ai-agent-mark" data-ai-brand-icon aria-hidden="true"></span>
+        <p>안녕하세요!</p>
+        <h2>집찾GO AI 에이전트예요.</h2>
+        <p>원하는 지역과 조건을 알려주시면<br>조건에 맞춰 추천해드릴게요.</p>
+      </article>
+
+      <section id="aiAgentSuggestions" class="ai-agent-suggestions" aria-label="추천 질문">
+        <strong>많은 분들이 자주 물어보시는 질문이에요.</strong>
+        <button type="button" data-ai-question="강남역 출퇴근 30분 이내, 10억 이하 대단지 아파트를 추천해줘">
+          <span class="ai-agent-brand-icon" data-ai-brand-icon aria-hidden="true"></span>
+          <span>강남역 출퇴근 30분 이내, 10억 이하 대단지 아파트를 추천해줘</span>
+        </button>
+        <button type="button" data-ai-question="영등포에 학원가 인접한 500세대 이상 아파트를 추천해줘">
+          <span class="ai-agent-brand-icon" data-ai-brand-icon aria-hidden="true"></span>
+          <span>영등포에 학원가 인접한 500세대 이상 아파트를 추천해줘</span>
+        </button>
+        <button type="button" data-ai-question="직장이 판교인 신혼부부를 위한 9억 이하 아파트를 추천해줘">
+          <span class="ai-agent-brand-icon" data-ai-brand-icon aria-hidden="true"></span>
+          <span>직장이 판교인 신혼부부를 위한 9억 이하 아파트를 추천해줘</span>
+        </button>
+      </section>
+    </div>
+
+    <form id="aiAgentForm" class="ai-agent-composer">
+      <div class="ai-agent-input-wrap">
+        <textarea id="aiAgentInput"
+                  rows="1"
+                  maxlength="1000"
+                  placeholder="원하는 지역과 조건을 입력해 보세요."
+                  aria-label="AI 에이전트에게 질문하기"></textarea>
+        <button id="aiAgentSend" type="submit" aria-label="질문 보내기" disabled>
+          <i class="ti ti-arrow-up" aria-hidden="true"></i>
+        </button>
+      </div>
+      <small>AI 학습 데이터 기반의 답변으로, 실제와 차이가 있을 수 있습니다.</small>
+    </form>
+  </section>
+
   <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=m4rxvrgqbo"></script>
 
   <!-- 빠른 클러스터링 라이브러리 -->
@@ -225,5 +291,6 @@
 
   <script src="/js/common.js" th:src="@{/js/common.js}"></script>
   <script src="/js/map.js" th:src="@{/js/map.js}"></script>
+  <script src="/js/ai-chat.js" th:src="@{/js/ai-chat.js}"></script>
 </body>
 </html>
