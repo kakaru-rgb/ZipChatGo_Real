@@ -3,11 +3,6 @@
    공통 헤더 / 모바일 메뉴 / 로그인 상태 처리
 ========================== */
 
-// 이 스크립트 자신의 위치(static/js/common.js) 기준으로 사이트 루트를 계산해요.
-// index.html에서 부르든(./static/js/common.js), 하위 페이지에서 부르든(../../static/js/common.js)
-// 브라우저가 해석하는 절대경로는 항상 동일하므로, 페이지 깊이에 상관없이 정확한 루트를 찾을 수 있어요.
-const COMMON_SITE_ROOT_URL = new URL("../../", document.currentScript.src);
-
 document.addEventListener("DOMContentLoaded", () => {
   initHeaderScroll();
   initMobileMenu();
@@ -59,27 +54,50 @@ function initMobileMenu() {
 
 /* ==========================
    로그인 상태 메뉴 변경
+   - 실제 로그인: 서버 세션(/api/auth/check) 기준
+   - 게스트 체험: 서버와 무관한 별도 플래그(jipchatgoGuestMode) 기준
+     (네트워크가 불안정한 시연 상황에서도 항상 로그인된 것처럼 보이게 하기 위함)
 ========================== */
 
-function updateLoginMenu() {
-  const loginUser = localStorage.getItem("jipchatgoLoginUser");
+async function updateLoginMenu() {
   const logoutButtons = document.querySelectorAll(".logout-btn");
+  const isGuest = localStorage.getItem("jipchatgoGuestMode") === "true";
 
-  if (loginUser) {
+  if (isGuest) {
+    // 게스트 모드는 서버에 물어보지 않고 무조건 로그인된 것으로 처리
     document.body.classList.add("login-active");
   } else {
-    document.body.classList.remove("login-active");
+    try {
+      const res = await fetch("/api/auth/check");
+      const data = await res.json();
+      document.body.classList.toggle("login-active", !!data.loggedIn);
+    } catch (err) {
+      // 네트워크 오류 등으로 확인 자체가 안 되면 로그아웃 상태로 취급
+      document.body.classList.remove("login-active");
+    }
   }
 
   logoutButtons.forEach(btn => {
     btn.addEventListener("click", (e) => {
       e.preventDefault();
-
-      localStorage.removeItem("jipchatgoLoginUser");
-      document.body.classList.remove("login-active");
-
-      alert("로그아웃 되었습니다.");
-      location.href = new URL("index.html", COMMON_SITE_ROOT_URL).href;
+      handleLogout();
     });
   });
+}
+
+async function handleLogout() {
+  const wasGuest = localStorage.getItem("jipchatgoGuestMode") === "true";
+  localStorage.removeItem("jipchatgoGuestMode");
+
+  if (!wasGuest) {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch (err) {
+      // 서버 로그아웃 요청이 실패해도, 클라이언트 쪽 상태는 로그아웃으로 처리하고 진행
+    }
+  }
+
+  document.body.classList.remove("login-active");
+  alert("로그아웃 되었습니다.");
+  location.href = "/";
 }

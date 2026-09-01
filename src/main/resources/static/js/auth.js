@@ -1,31 +1,33 @@
 // ==================================================
 // auth.js — 집찾GO 로그인/회원가입 공통 스크립트
-// login.html, signup.html에서 동일하게 사용
+// member/auth.html 에서 사용 (login/signup 통합)
 // ==================================================
-
-const AUTH_SITE_ROOT_URL = new URL("../../", document.currentScript.src);
 
 document.addEventListener('DOMContentLoaded', () => {
 
-  /* ---------- 로그인 후 이동할 목적지 (?redirect=...) ---------- */
+  /* ---------- 로그인 후 이동할 목적지 (?redirect=...) ----------
+     이 프로젝트는 정적 HTML 파일이 아니라 Thymeleaf 컨트롤러 라우팅을 쓰므로,
+     기본 목적지는 파일 경로(index.html)가 아니라 실제 라우팅 경로(/)여야 함. */
   const params = new URLSearchParams(window.location.search);
-  const redirectTarget = params.get('redirect') || new URL('index.html', AUTH_SITE_ROOT_URL).href;
+  const redirectTarget = params.get('redirect') || '/';
 
   function goToRedirectTarget() {
     window.location.href = redirectTarget;
   }
 
-  // common.js가 localStorage의 이 키를 보고 로그인 상태를 판단하므로,
-  // 로그인/회원가입/게스트 체험 모두 이 함수를 통해 상태를 저장해요.
-  function setLoggedIn(userLabel) {
-    localStorage.setItem('jipchatgoLoginUser', userLabel);
+  // 시연/발표용 게스트 모드 전용 플래그.
+  // 서버 세션과는 완전히 별개로 동작해서, 네트워크가 불안정한 상황에서도
+  // "무조건 로그인된 것처럼" 보여주기 위한 안전장치예요.
+  // 실제 로그인/회원가입은 이 값을 절대 쓰지 않고, 서버 세션(/api/auth/check)만 기준으로 삼아요.
+  function setGuestMode() {
+    localStorage.setItem('jipchatgoGuestMode', 'true');
   }
 
   // 특정 페이지로 가기 위해 로그인이 필요해서 넘어온 경우, 안내 배너를 보여줘요.
   if (params.get('redirect')) {
     const banner = document.createElement('div');
     banner.className = 'redirect-notice';
-    const isRegister = redirectTarget.includes('register.html');
+    const isRegister = redirectTarget.includes('/property/register');
     banner.innerHTML = `<i class="ti ti-info-circle"></i> ${
       isRegister ? '매물을 등록하려면 먼저 로그인해주세요.' : '계속하려면 먼저 로그인해주세요.'
     }`;
@@ -110,7 +112,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function getSignupProgress() {
-    // 이름/이메일/비밀번호가 채워질수록 열쇠가 하나씩 걸림 (최대 3개)
     const name = document.getElementById('suName');
     const email = document.getElementById('suEmail');
     const pw = document.getElementById('suPassword');
@@ -170,9 +171,10 @@ document.addEventListener('DOMContentLoaded', () => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
   }
 
+  /* ---------- 로그인: 실제 서버 API 연결 ---------- */
   const loginForm = document.getElementById('loginForm');
   if (loginForm) {
-    loginForm.addEventListener('submit', (e) => {
+    loginForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = document.getElementById('loginEmail');
       const pw = document.getElementById('loginPassword');
@@ -181,17 +183,37 @@ document.addEventListener('DOMContentLoaded', () => {
       else email.classList.remove('invalid');
       if (pw.value.length < 4) { pw.classList.add('invalid'); ok = false; }
       else pw.classList.remove('invalid');
-      if (ok) {
-        setLoggedIn(email.value);
-        showToast('로그인 되었습니다. 이동할게요.');
-        setTimeout(goToRedirectTarget, 700);
+      if (!ok) return;
+
+      const submitBtn = loginForm.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email.value, password: pw.value })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          showToast(`${data.name}님, 로그인 되었습니다.`);
+          setTimeout(goToRedirectTarget, 700);
+        } else {
+          showToast(data.message || '로그인에 실패했어요.');
+        }
+      } catch (err) {
+        showToast('서버에 연결할 수 없어요. 잠시 후 다시 시도해주세요.');
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
       }
     });
   }
 
+  /* ---------- 회원가입: 실제 서버 API 연결 (일반회원 전용) ---------- */
   const signupForm = document.getElementById('signupForm');
   if (signupForm) {
-    signupForm.addEventListener('submit', (e) => {
+    signupForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const pw = document.getElementById('suPassword');
       const pwCheck = document.getElementById('suPasswordCheck');
@@ -206,22 +228,58 @@ document.addEventListener('DOMContentLoaded', () => {
 
       requiredAgree.forEach(chk => { if (!chk.checked) ok = false; });
 
-      if (ok) {
-        const suEmail = document.getElementById('suEmail');
-        setLoggedIn(suEmail && suEmail.value ? suEmail.value : 'member');
-        showToast('회원가입이 완료됐어요. 환영합니다!');
-        setTimeout(goToRedirectTarget, 700);
+      if (!ok) {
+        if (!Array.from(requiredAgree).every(c => c.checked)) {
+          showToast('필수 약관에 동의해주세요.');
+        }
+        return;
       }
-      else if (!Array.from(requiredAgree).every(c => c.checked)) {
-        showToast('필수 약관에 동의해주세요.');
+
+      // 공인중개사 가입은 아직 서버에서 지원하지 않음 (일반회원만 우선 연결)
+      const selectedType = document.querySelector('input[name="memberType"]:checked');
+      if (selectedType && selectedType.value === 'broker') {
+        showToast('공인중개사 회원가입은 아직 준비 중이에요. 곧 지원할게요!');
+        return;
+      }
+
+      const suName = document.getElementById('suName');
+      const suEmail = document.getElementById('suEmail');
+      const suPhone = document.getElementById('suPhone');
+
+      const submitBtn = signupForm.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        const res = await fetch('/api/auth/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: suEmail.value,
+            password: pw.value,
+            name: suName.value,
+            phone: suPhone.value
+          })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          showToast('회원가입이 완료됐어요. 환영합니다!');
+          setTimeout(goToRedirectTarget, 700);
+        } else {
+          showToast(data.message || '회원가입에 실패했어요.');
+        }
+      } catch (err) {
+        showToast('서버에 연결할 수 없어요. 잠시 후 다시 시도해주세요.');
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
       }
     });
   }
 
-  /* ---------- 게스트 체험 로그인 (발표/시연용) ---------- */
+  /* ---------- 게스트 체험 로그인 (발표/시연용, 서버와 무관하게 동작) ---------- */
   document.querySelectorAll('.guest-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      setLoggedIn('guest');
+      setGuestMode();
       showToast('게스트 모드로 접속했어요 (시연용 계정)');
       setTimeout(goToRedirectTarget, 900);
     });
