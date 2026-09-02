@@ -355,3 +355,26 @@ docs/
 
 처럼 넣어두는 것도 좋습니다. 그러면 Codex가 계속 프로젝트 문서로 참조하기 편합니다.
 
+
+
+
+
+1. ai-server 폴더 생성
+
+2. ai-server/.venv 생성
+
+3. 가상환경 활성화
+
+4. FastAPI + Uvicorn 설치
+
+5. requirements.txt 작성
+
+6. .gitignore 설정
+
+7. app/main.py 작성
+
+8. FastAPI 실행
+
+9. localhost:8000/docs 확인
+
+10. 그 다음에야 Spring → FastAPI 연결
