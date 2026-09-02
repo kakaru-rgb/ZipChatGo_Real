@@ -24,8 +24,20 @@ public class PageController {
         return "member/auth";
     }
 
+    @GetMapping("/login")
+    public String loginAlias(Model model) {
+        model.addAttribute("defaultTab", "login");
+        return "member/auth";
+    }
+
     @GetMapping("/member/signup")
     public String signup(Model model) {
+        model.addAttribute("defaultTab", "signup");
+        return "member/auth";
+    }
+
+    @GetMapping("/join")
+    public String joinAlias(Model model) {
         model.addAttribute("defaultTab", "signup");
         return "member/auth";
     }
@@ -39,6 +51,11 @@ public class PageController {
 
     @GetMapping("/property/register")
     public String propertyRegister() {
+        return "property/register";
+    }
+
+    @GetMapping("/properties/register")
+    public String propertiesRegister() {
         return "property/register";
     }
 

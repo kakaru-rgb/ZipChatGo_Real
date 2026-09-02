@@ -41,10 +41,25 @@ public class SupportPageController {
         return "support/team";
     }
 
-    // 실제 템플릿 파일명이 Servise.html(오타)이라 리턴값을 맞춤.
-    // 가능하면 파일명을 service.html로 정정하는 것을 권장.
     @GetMapping("/support/service")
-    public String service() {
-        return "support/Servise";
+    public String supportService() {
+        return "support/service";
+    }
+
+    // /about 경로 별칭
+    @GetMapping("/about/service")
+    public String aboutService() {
+        return "support/service";
+    }
+
+    @GetMapping("/about/team")
+    public String aboutTeam() {
+        return "support/team";
+    }
+
+    // /content 경로 별칭
+    @GetMapping("/content/modelhouse")
+    public String contentModelhouse() {
+        return "support/modelhouse";
     }
 }
