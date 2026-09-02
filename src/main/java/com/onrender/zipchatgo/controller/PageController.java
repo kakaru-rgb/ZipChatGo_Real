@@ -46,4 +46,12 @@ public class PageController {
     public String marketTrend() {
         return "market/trend";
     }
+
+    // 파일은 templates/support/service.html 에 있지만,
+    // index.html 등에서 이미 /about/service 로 링크를 걸어두었으므로 URL은 그대로 유지하고
+    // 템플릿 경로만 실제 위치(support/service)로 연결한다.
+    @GetMapping("/about/service")
+    public String aboutService() {
+        return "support/service";
+    }
 }
