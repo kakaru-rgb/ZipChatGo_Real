@@ -91,6 +91,10 @@
 .ai-agent-answer p + p,
 .ai-agent-answer p + ul,
 .ai-agent-answer ul + p { margin-top: 8px; }
+.ai-agent-answer p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .ai-agent-answer ul { padding-left: 20px; }
 .ai-agent-answer li + li { margin-top: 7px; }
 .ai-agent-answer h2 {

@@ -122,8 +122,43 @@ map = new naver.maps.Map("map", {
   zoomControl: false
 });
 
+window.zipchatgoMapState = Object.freeze({
+  getSnapshot: getAiAppState
+});
+
 loadProperties();
 loadPois();
+
+function getAiAppState() {
+  const center = map.getCenter();
+  const bounds = map.getBounds();
+  const southWest = bounds.getSW();
+  const northEast = bounds.getNE();
+  const maxPrice = document.getElementById("priceFilter")?.value || "";
+
+  return {
+    current_page: "map",
+    map_center: {
+      lat: center.lat(),
+      lng: center.lng()
+    },
+    zoom: map.getZoom(),
+    map_bounds: {
+      south: southWest.lat(),
+      west: southWest.lng(),
+      north: northEast.lat(),
+      east: northEast.lng()
+    },
+    selected_region: selectedProperty?.district || selectedProperty?.address || null,
+    selected_property_id: selectedProperty?.id != null ? String(selectedProperty.id) : null,
+    favorite_property_ids: Array.from(favoritePropertyIds, String),
+    filters: {
+      keyword: document.getElementById("searchInput")?.value.trim() || null,
+      property_type: document.getElementById("typeFilter")?.value || null,
+      max_price: maxPrice ? Number(maxPrice) * 10000 : null
+    }
+  };
+}
 
 async function loadProperties() {
   try {

@@ -52,8 +52,8 @@ AI:
 "이 매물이 있는 지역의 최근 매매가 흐름도 보여줘."
 
 AI:
-- 매물 검색 Tool 호출
-- 해당 매물의 위치 확인
+- 현재 선택 매물을 App State / User Context에서 확인
+- 필요한 경우 get_property_detail() Tool로 해당 매물의 상세정보와 위치 확인
 - 해당 지역/역 자동 선택
 - 매매 유형 자동 선택
 - 분석 실행
@@ -222,6 +222,7 @@ A. 부동산법 RAG
 
 B. App Knowledge RAG
 우리 서비스 자체를 설명하기 위한 자료
+다른 모든 기능이 완성된 후, 진행 고려
 
 예)
 - 서비스 소개
@@ -468,9 +469,6 @@ AI가 이 Tool/Action을 호출하면
 법률 지식
 → RAG
 
-웹사이트 설명
-→ App Knowledge / RAG
-
 현재 지도 및 사용자 상태
 → Context / App State
 
@@ -485,6 +483,9 @@ AI가 이 Tool/Action을 호출하면
 
 분석
 → Tool
+
+웹사이트 설명 (후순위 과제)
+→ App Knowledge / RAG
 
 따라서 초기 버전에서 Fine-tuning은 필요하지 않다.
 
@@ -526,7 +527,8 @@ FastAPI
 → FastAPI
 
 
-향후 오픈소스 LLM도 교체 가능하도록 LLM Provider를 추상화하는 것이 좋다.
+향후 오픈소스 LLM도 교체 가능하도록 LLM Provider를 추상화 필요
+LLM Provider만 바꾸면 다른 LLM로 바로 교체할 수 있도록 처음부터 고려하여 진행 필요
 
 예)
 
@@ -548,18 +550,24 @@ LLM Provider
 내 PC
 
 Frontend
-Spring Boot :8080
-FastAPI :8000
+Spring Boot 서버 : http://localhost:8080
+FastAPI 서버     : http://localhost:8000
 DB
 
-Spring Boot
-→ http://localhost:8000
-→ FastAPI
+일반 웹 요청:
+Frontend
+→ Spring Boot (:8080)
 
-FastAPI
+AI 요청 발생 시:
+Frontend
+→ Spring Boot (:8080)
+→ FastAPI (:8000)
 → OpenAI API
 
-두 서버는 동시에 실행한다.
+즉 Spring Boot의 포트가 8000으로 바뀌는 것이 아니라,
+Spring Boot가 localhost:8000에서 실행 중인 FastAPI 서버를 호출하는 구조이다.
+
+Spring Boot와 FastAPI 두 서버는 로컬에서 동시에 실행한다.
 
 
 ============================================================
@@ -567,6 +575,7 @@ FastAPI
 ============================================================
 
 Render 계정 하나로 여러 서비스를 만들 수 있다.
+일단 첫 배포는 Render를 사용하여 한 후, 나중에 AWS EC2를 사용하여 다시 배포할 예정이다.
 
 예)
 
@@ -663,6 +672,8 @@ O
 ============================================================
 
 [0단계] 현재 웹사이트 정리
+- 일단 내 담당 페이지는 지도 웹페이지이므로 map.html과 연관이 없는 파일은 수정하면 안됨
+- AI agent 채팅창은 현재 지도 웹페이지에 만들어 놓았으며, chat.html 또는 관련 파일은 무시해도 되며, 우리는 ai-chat.html 및 이와 관련된 파일만 작업하면 됨
 - 현재 페이지 목록 정리
 - 지도 기능 정리
 - 매물 기능 정리
@@ -751,8 +762,33 @@ OPEN_PROPERTY
 이 단계가 완성되면
 "AI가 지도와 대화한다"는 느낌이 본격적으로 생긴다.
 
+여기까지 완료하면 첫 번째 핵심 프로토타입이 완성된다.
 
-[7단계] 관심매물 Context 및 Tool
+예)
+사용자:
+"판교역 8억 이하 아파트 보여줘."
+
+실행 흐름:
+AI 채팅
+→ 매물 검색 Tool
+→ 지도 이동
+→ 조건에 맞는 매물 마커 강조
+→ 자연어 설명
+
+
+[7단계] 부동산법 RAG 구축
+
+공식 법률 문서를 수집하고
+Vector DB에 저장.
+
+AI가 법률 관련 질문일 때만
+search_real_estate_law Tool을 사용하도록 한다.
+
+법률 RAG는 중요하지만,
+우선 "AI 채팅 → 매물 검색 Tool → 지도 Action" 핵심 Agent 흐름을 먼저 완성한 뒤 추가한다.
+
+
+[8단계] 관심매물 Context 및 Tool
 
 예)
 get_favorites()
@@ -766,57 +802,7 @@ compare_favorites()
 같은 대화 구현.
 
 
-[8단계] App Structure / 페이지 이동 Tool
-
-예)
-navigate_page("about")
-navigate_page("analysis")
-navigate_page("favorites")
-
-사용자:
-"현재 이 앱은 누가 만든 거야?"
-→ 소개 페이지 이동 + 설명
-
-
-[9단계] 부동산 분석 페이지 Tool
-
-예)
-select_analysis_station()
-select_analysis_region()
-set_analysis_trade_type()
-run_market_analysis()
-
-사용자:
-"판교역 매매가 분석을 보여줘."
-→ 분석 페이지 이동
-→ 판교역 선택
-→ 매매 선택
-→ 분석 실행
-→ 그래프 표시
-→ 결과 자연어 해석
-
-
-[10단계] App Knowledge 구축
-
-서비스 소개
-사용방법
-페이지별 기능
-FAQ
-
-작으면 Prompt/Manifest로 제공하고,
-내용이 커지면 App Knowledge RAG로 분리.
-
-
-[11단계] 부동산법 RAG 구축
-
-공식 법률 문서를 수집하고
-Vector DB에 저장.
-
-AI가 법률 관련 질문일 때만
-search_real_estate_law Tool을 사용하도록 한다.
-
-
-[12단계] POI 및 실거래/분석 Tool
+[9단계] POI 및 실거래/분석 Tool
 
 예)
 search_subway()
@@ -828,7 +814,7 @@ get_market_analysis()
 지도와 분석 기능을 더 풍부하게 만든다.
 
 
-[13단계] 다단계 Agent 동작
+[10단계] 다단계 Agent 동작
 
 한 질문에 여러 Tool을 순서대로 호출하게 한다.
 
@@ -848,7 +834,7 @@ get_favorites()
 → 최종 설명
 
 
-[14단계] Streaming 및 UX 개선
+[11단계] Streaming 및 UX 개선
 
 - 토큰 Streaming
 - Tool 실행 중 상태 표시
@@ -858,7 +844,7 @@ get_favorites()
 - 에러/재시도 처리
 
 
-[15단계] 로그와 평가 데이터 축적
+[12단계] 로그와 평가 데이터 축적
 
 저장할 수 있는 것:
 - 사용자 질문
@@ -870,6 +856,52 @@ get_favorites()
 
 이 데이터를 바탕으로
 Prompt 개선 → Agent 개선 → 필요 시 Fine-tuning 검토.
+
+
+
+[추가 구축 단계]
+위 기능들이 완성된 후, 진행 고려 필요
+이 단계는 현재 미정으로 진행 필요 시, 일단 진행 확인 필요
+
+[추가 구축 1단계] 부동산 분석 페이지 Tool
+
+예)
+select_analysis_station()
+select_analysis_region()
+set_analysis_trade_type()
+run_market_analysis()
+
+사용자:
+"판교역 매매가 분석을 보여줘."
+→ 분석 페이지 이동
+→ 판교역 선택
+→ 매매 선택
+→ 분석 실행
+→ 그래프 표시
+→ 결과 자연어 해석
+
+
+[추가 구축 2단계] App Knowledge 구축
+
+서비스 소개
+사용방법
+페이지별 기능
+FAQ
+
+작으면 Prompt/Manifest로 제공하고,
+내용이 커지면 App Knowledge RAG로 분리.
+
+
+[추가 구축 3단계] App Structure / 페이지 이동 Tool
+
+예)
+navigate_page("about")
+navigate_page("analysis")
+navigate_page("favorites")
+
+사용자:
+"현재 이 앱은 누가 만든 거야?"
+→ 소개 페이지 이동 + 설명
 
 
 ============================================================

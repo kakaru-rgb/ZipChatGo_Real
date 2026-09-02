@@ -55,37 +55,66 @@
     messages.appendChild(loading);
   }
 
-  function appendSampleAnswer() {
+  function appendAgentAnswer(text) {
     document.getElementById("aiAgentLoading")?.remove();
 
     const answer = document.createElement("article");
     answer.className = "ai-agent-answer";
-    answer.innerHTML = `
-      <span class="ai-agent-brand-icon ai-agent-mark" data-ai-brand-icon aria-hidden="true"></span>
-      <p>요청하신 조건을 확인했어요.</p>
-      <p>현재는 채팅 화면을 확인하기 위한 예시 응답이며, 실제 매물 검색 기능은 AI 에이전트 연동 후 제공될 예정입니다.</p>
-      <ul>
-        <li><strong>지역과 출퇴근 조건</strong>을 기준으로 후보를 찾습니다.</li>
-        <li><strong>예산, 면적, 세대수</strong> 등 상세 조건을 함께 비교합니다.</li>
-        <li>추천 결과에는 매물 정보와 추천 이유가 문서 형태로 표시됩니다.</li>
-      </ul>
-    `;
+
+    const icon = document.createElement("span");
+    icon.className = "ai-agent-brand-icon ai-agent-mark";
+    icon.dataset.aiBrandIcon = "";
+    icon.setAttribute("aria-hidden", "true");
+
+    const paragraph = document.createElement("p");
+    paragraph.textContent = text;
+
+    answer.append(icon, paragraph);
     messages.appendChild(answer);
     renderBrandIcons();
   }
 
-  function requestAgentResponse() {
-    // FastAPI 연동 시 이 함수의 임시 응답을 Spring Boot API 호출로 교체합니다.
+  function getAppState() {
+    return window.zipchatgoMapState?.getSnapshot?.() || {
+      current_page: "map"
+    };
+  }
+
+  async function requestAgentResponse(text) {
     appendLoading();
     scrollToLatest();
 
-    window.setTimeout(() => {
-      appendSampleAnswer();
+    try {
+      const response = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          message: text,
+          appState: getAppState()
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`AI request failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!data?.message || typeof data.message !== "string") {
+        throw new Error("AI response did not contain a message");
+      }
+
+      appendAgentAnswer(data.message);
+    } catch (error) {
+      console.error("AI 에이전트 응답을 불러오지 못했습니다.", error);
+      appendAgentAnswer("죄송합니다. 현재 AI 서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.");
+    } finally {
       waitingForResponse = false;
       syncInput();
       scrollToLatest();
       input.focus();
-    }, 700);
+    }
   }
 
   function sendMessage(rawText) {
@@ -97,7 +126,7 @@
     input.value = "";
     waitingForResponse = true;
     syncInput();
-    requestAgentResponse();
+    requestAgentResponse(text);
   }
 
   launcher.addEventListener("click", () => setPanelOpen(true));
