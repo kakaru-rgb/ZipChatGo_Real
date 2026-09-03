@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>매물 검수 | 집찾GO 관리자</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <link rel="stylesheet" th:href="@{/css/admin.css}">
+</head>
+<body>
+
+<header class="admin-topbar">
+  <a th:href="@{/}" class="admin-logo">
+    <img th:src="@{/images/logo.png}" alt="집찾GO">
+  </a>
+  <div class="admin-topbar-divider"></div>
+  <h1 class="admin-topbar-title">매물 검수</h1>
+</header>
+
+<main class="admin-main">
+
+  <nav class="admin-tabs" id="adminTabs">
+    <button type="button" class="admin-tab is-active" data-status="PENDING">
+      대기중 <span class="tab-count" id="countPending">0</span>
+    </button>
+    <button type="button" class="admin-tab" data-status="APPROVED">승인됨</button>
+    <button type="button" class="admin-tab" data-status="REJECTED">거절됨</button>
+  </nav>
+
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>매물정보</th>
+          <th>면적 / 구조</th>
+          <th>가격</th>
+          <th>등록자</th>
+          <th>등록일</th>
+          <th>상태</th>
+          <th class="col-actions"></th>
+        </tr>
+      </thead>
+      <tbody id="propertyTableBody"></tbody>
+    </table>
+
+    <p class="admin-empty" id="emptyState" hidden>표시할 매물이 없어요.</p>
+    <p class="admin-loading" id="loadingState">불러오는 중...</p>
+  </div>
+
+</main>
+
+<div class="detail-backdrop" id="detailBackdrop" hidden></div>
+
+<aside class="detail-panel" id="detailPanel" aria-hidden="true">
+  <button type="button" class="detail-close" id="detailClose" aria-label="닫기">
+    <i class="ti ti-x"></i>
+  </button>
+  <div class="detail-panel-inner" id="detailContent">
+    <!-- JS로 채워짐 -->
+  </div>
+</aside>
+
+<script th:src="@{/js/admin.js}"></script>
+</body>
+</html>

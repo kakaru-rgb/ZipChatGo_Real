@@ -54,4 +54,10 @@ public class PageController {
     public String aboutService() {
         return "support/service";
     }
+
+    // AdminInterceptor(/admin/**)가 접근 제어를 담당
+    @GetMapping("/admin/properties")
+    public String adminProperties() {
+        return "admin/properties";
+    }
 }

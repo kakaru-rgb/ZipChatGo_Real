@@ -1,12 +1,17 @@
 package com.onrender.zipchatgo.config;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
+@RequiredArgsConstructor
 public class WebConfig implements WebMvcConfigurer {
+
+	// MemberRepository가 필요해서 Spring Bean으로 등록된 AdminInterceptor를 주입받음.
+	private final AdminInterceptor adminInterceptor;
 
 	@Override
 	public void addResourceHandlers(ResourceHandlerRegistry registry) {
@@ -21,13 +26,19 @@ public class WebConfig implements WebMvcConfigurer {
 	@Override
 	public void addInterceptors(InterceptorRegistry registry) {
 		// 로그인이 필요한 페이지만 명시적으로 지정 (화이트리스트 아닌 명시적 보호 목록 방식).
-		// 새 페이지를 보호 대상으로 추가하려면 이 목록에 경로만 추가하면 됨.
 		registry.addInterceptor(new AuthInterceptor())
 			.addPathPatterns(
 				"/favorite",
 				"/properties/map",
 				"/property/register",
 				"/market/trend"
+			);
+
+		// 관리자 전용 경로 (API + 나중에 만들 관리자 페이지 둘 다 미리 포함)
+		registry.addInterceptor(adminInterceptor)
+			.addPathPatterns(
+				"/api/admin/**",
+				"/admin/**"
 			);
 	}
 }
