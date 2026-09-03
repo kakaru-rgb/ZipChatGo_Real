@@ -1,0 +1,478 @@
+/* ===========================
+   admin.css
+   집찾GO 관리자 - 매물 검수 페이지
+   공개 사이트의 화려한 글래스모피즘 대신,
+   반복 사용하는 내부 도구답게 정보 밀도와 판단 속도를 우선한다.
+=========================== */
+
+:root {
+  --a-primary: #1E88FF;
+  --a-accent: #17D4B3;
+  --a-dark: #0F172A;
+  --a-text: #172033;
+  --a-gray: #64748B;
+  --a-border: #E2E8F0;
+  --a-bg: #F7F8FA;
+  --a-white: #FFFFFF;
+
+  --a-pending: #B45309;
+  --a-pending-bg: #FEF3C7;
+  --a-approved: #0F9D74;
+  --a-approved-bg: #DCFCE7;
+  --a-rejected: #BE123C;
+  --a-rejected-bg: #FEE2E2;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  background: var(--a-bg);
+  color: var(--a-text);
+  min-height: 100vh;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* ===========================
+   상단바
+=========================== */
+
+.admin-topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 64px;
+  padding: 0 28px;
+  background: var(--a-white);
+  border-bottom: 1px solid var(--a-border);
+}
+
+.admin-logo img {
+  height: 32px;
+  display: block;
+  object-fit: contain;
+}
+
+.admin-topbar-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--a-border);
+}
+
+.admin-topbar-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--a-text);
+}
+
+/* ===========================
+   본문
+=========================== */
+
+.admin-main {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 32px 24px 80px;
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--a-border);
+}
+
+.admin-tab {
+  border: none;
+  background: none;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--a-gray);
+  border-bottom: 2px solid transparent;
+  transform: translateY(1px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-tab:hover {
+  color: var(--a-text);
+}
+
+.admin-tab.is-active {
+  color: var(--a-primary);
+  border-bottom-color: var(--a-primary);
+}
+
+.tab-count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--a-pending-bg);
+  color: var(--a-pending);
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ===========================
+   테이블
+=========================== */
+
+.admin-table-wrap {
+  background: var(--a-white);
+  border: 1px solid var(--a-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.admin-table thead th {
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--a-gray);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--a-border);
+  background: #FAFBFC;
+}
+
+.admin-table tbody tr {
+  border-bottom: 1px solid var(--a-border);
+  transition: background 0.15s ease;
+  cursor: pointer;
+}
+
+.admin-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.admin-table tbody tr:hover {
+  background: #F5F8FF;
+}
+
+.admin-table td {
+  padding: 14px 16px;
+  font-size: 14px;
+  vertical-align: middle;
+}
+
+.cell-property strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.cell-property span {
+  display: block;
+  font-size: 12.5px;
+  color: var(--a-gray);
+}
+
+.cell-registrant .registrant-name {
+  font-weight: 600;
+}
+
+.cell-registrant .registrant-email {
+  display: block;
+  font-size: 12px;
+  color: var(--a-gray);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.status-badge.PENDING {
+  background: var(--a-pending-bg);
+  color: var(--a-pending);
+}
+
+.status-badge.APPROVED {
+  background: var(--a-approved-bg);
+  color: var(--a-approved);
+}
+
+.status-badge.REJECTED {
+  background: var(--a-rejected-bg);
+  color: var(--a-rejected);
+}
+
+.col-actions {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-approve,
+.btn-reject {
+  border: 1px solid var(--a-border);
+  background: var(--a-white);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--a-text);
+}
+
+.btn-approve:hover {
+  border-color: var(--a-approved);
+  color: var(--a-approved);
+}
+
+.btn-reject:hover {
+  border-color: var(--a-rejected);
+  color: var(--a-rejected);
+}
+
+.admin-empty,
+.admin-loading {
+  padding: 48px 16px;
+  text-align: center;
+  color: var(--a-gray);
+  font-size: 14px;
+}
+
+/* ===========================
+   상세 패널 (오른쪽 슬라이드)
+=========================== */
+
+.detail-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.32);
+  z-index: 900;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.detail-backdrop.is-visible {
+  opacity: 1;
+}
+
+.detail-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(440px, 92vw);
+  background: var(--a-white);
+  box-shadow: -18px 0 40px rgba(15, 23, 42, 0.16);
+  z-index: 950;
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  overflow-y: auto;
+}
+
+.detail-panel.is-open {
+  transform: translateX(0);
+}
+
+.detail-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: var(--a-bg);
+  border-radius: 8px;
+  font-size: 16px;
+  color: var(--a-gray);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.detail-close:hover {
+  background: var(--a-border);
+  color: var(--a-text);
+}
+
+.detail-panel-inner {
+  padding: 28px 24px 40px;
+}
+
+.detail-photo-placeholder {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 12px;
+  background: var(--a-bg);
+  border: 1px dashed var(--a-border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--a-gray);
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
+.detail-photo-placeholder i {
+  font-size: 26px;
+}
+
+.detail-title {
+  font-size: 17px;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.detail-subtitle {
+  font-size: 13px;
+  color: var(--a-gray);
+  margin-bottom: 20px;
+}
+
+.detail-section {
+  margin-bottom: 22px;
+}
+
+.detail-section h3 {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--a-gray);
+  margin-bottom: 10px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+}
+
+.detail-grid dt {
+  font-size: 12.5px;
+  color: var(--a-gray);
+  margin-bottom: 2px;
+}
+
+.detail-grid dd {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pill-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pill {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--a-bg);
+  border: 1px solid var(--a-border);
+  font-size: 12.5px;
+  color: var(--a-text);
+}
+
+.owner-warning {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--a-rejected-bg);
+  color: var(--a-rejected);
+  font-size: 13px;
+  line-height: 1.5;
+  margin-top: 10px;
+}
+
+.owner-warning i {
+  flex-shrink: 0;
+  font-size: 16px;
+  margin-top: 1px;
+}
+
+.detail-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.detail-actions button {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  border: none;
+}
+
+.detail-actions .btn-approve-lg {
+  background: var(--a-approved);
+  color: white;
+}
+
+.detail-actions .btn-approve-lg:hover {
+  background: #0B8360;
+}
+
+.detail-actions .btn-reject-lg {
+  background: var(--a-rejected-bg);
+  color: var(--a-rejected);
+}
+
+.detail-actions .btn-reject-lg:hover {
+  background: #FBC7D2;
+}
+
+.detail-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .admin-main {
+    padding: 20px 12px 60px;
+  }
+
+  .admin-table thead {
+    display: none;
+  }
+
+  .admin-table, .admin-table tbody, .admin-table tr, .admin-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .admin-table tr {
+    padding: 14px 16px;
+  }
+
+  .admin-table td {
+    padding: 3px 0;
+  }
+
+  .col-actions {
+    margin-top: 8px;
+  }
+}
