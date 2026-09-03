@@ -64,12 +64,60 @@ public class PageController {
         return "market/trend";
     }
 
-    // 파일은 templates/support/service.html 에 있지만,
-    // index.html 등에서 이미 /about/service 로 링크를 걸어두었으므로 URL은 그대로 유지하고
-    // 템플릿 경로만 실제 위치(support/service)로 연결한다.
+    // =========================
+    // 고객지원
+    // =========================
+
+    @GetMapping("/support/contact")
+    public String contact() {
+        return "support/contact";
+    }
+
+    @GetMapping("/support/guide")
+    public String guide() {
+        return "support/guide";
+    }
+
+    @GetMapping("/support/live")
+    public String live() {
+        return "support/live";
+    }
+
+    @GetMapping("/support/modelhouse")
+    public String modelhouse() {
+        return "support/modelhouse";
+    }
+
+    @GetMapping("/support/notice")
+    public String notice() {
+        return "support/notice";
+    }
+
+    @GetMapping("/support/team")
+    public String team() {
+        return "support/team";
+    }
+
+    @GetMapping("/support/service")
+    public String supportService() {
+        return "support/service";
+    }
+
+    // /about 경로 별칭
     @GetMapping("/about/service")
     public String aboutService() {
         return "support/service";
+    }
+
+    @GetMapping("/about/team")
+    public String aboutTeam() {
+        return "support/team";
+    }
+
+    // /content 경로 별칭
+    @GetMapping("/content/modelhouse")
+    public String contentModelhouse() {
+        return "support/modelhouse";
     }
 
     // AdminInterceptor(/admin/**)가 접근 제어를 담당
