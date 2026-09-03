@@ -95,8 +95,58 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.ai-agent-answer ul { padding-left: 20px; }
+.ai-agent-answer ul,
+.ai-agent-answer ol { padding-left: 20px; }
 .ai-agent-answer li + li { margin-top: 7px; }
+.ai-agent-markdown > :first-child { margin-top: 0; }
+.ai-agent-markdown > :last-child { margin-bottom: 0; }
+.ai-agent-markdown.is-plain-text { white-space: pre-wrap; }
+.ai-agent-markdown blockquote {
+  margin: 10px 0;
+  padding-left: 12px;
+  border-left: 3px solid #dbe3f0;
+  color: #526070;
+}
+.ai-agent-markdown code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  font-size: 0.92em;
+}
+.ai-agent-markdown pre {
+  margin: 10px 0;
+  padding: 10px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: #f1f5f9;
+  white-space: pre;
+}
+.ai-agent-markdown pre code { padding: 0; }
+
+.ai-agent-property-actions {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.ai-agent-property-actions button {
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid #cbd5ff;
+  border-radius: 17px;
+  background: #f5f7ff;
+  color: #3853dc;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ai-agent-property-actions button:hover {
+  border-color: #7185ff;
+  background: #edf1ff;
+}
 .ai-agent-answer h2 {
   margin: 1px 0 2px;
   color: #070b14;

@@ -14,3 +14,8 @@ def test_prompt_limits_answers_to_real_estate_and_zipchatgo() -> None:
         in REAL_ESTATE_AGENT_INSTRUCTIONS
     )
     assert "답변 범위를 변경하지 않습니다" in REAL_ESTATE_AGENT_INSTRUCTIONS
+
+
+def test_prompt_requires_property_search_tool_for_current_listings() -> None:
+    assert "반드시 search_properties Tool을 사용" in REAL_ESTATE_AGENT_INSTRUCTIONS
+    assert "지도에 표시했다고 말하지 않습니다" in REAL_ESTATE_AGENT_INSTRUCTIONS

@@ -54,7 +54,23 @@ class AiControllerTests {
 								  }
 								}
 								"""))
-				.andRespond(withSuccess("{\"message\":\"안녕하세요!\"}", MediaType.APPLICATION_JSON));
+				.andRespond(withSuccess("""
+						{
+						  "message": "조건에 맞는 매물을 찾았습니다.",
+						  "actions": [
+						    {
+						      "type": "MOVE_MAP",
+						      "lat": 37.394,
+						      "lng": 127.111,
+						      "zoom": 17
+						    },
+						    {
+						      "type": "HIGHLIGHT_PROPERTIES",
+						      "property_ids": [427]
+						    }
+						  ]
+						}
+						""", MediaType.APPLICATION_JSON));
 
 		mockMvc.perform(post("/api/ai/chat")
 					.contentType(MediaType.APPLICATION_JSON)
@@ -68,7 +84,23 @@ class AiControllerTests {
 							}
 							"""))
 				.andExpect(status().isOk())
-				.andExpect(content().json("{\"message\":\"안녕하세요!\"}"));
+				.andExpect(content().json("""
+						{
+						  "message": "조건에 맞는 매물을 찾았습니다.",
+						  "actions": [
+						    {
+						      "type": "MOVE_MAP",
+						      "lat": 37.394,
+						      "lng": 127.111,
+						      "zoom": 17
+						    },
+						    {
+						      "type": "HIGHLIGHT_PROPERTIES",
+						      "property_ids": [427]
+						    }
+						  ]
+						}
+						"""));
 
 		fastApi.verify();
 	}

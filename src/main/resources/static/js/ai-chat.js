@@ -55,7 +55,40 @@
     messages.appendChild(loading);
   }
 
-  function appendAgentAnswer(text) {
+  function renderSafeMarkdown(text) {
+    const content = document.createElement("div");
+    content.className = "ai-agent-markdown";
+
+    if (!window.marked?.parse || !window.DOMPurify?.sanitize) {
+      content.classList.add("is-plain-text");
+      content.textContent = text;
+      return content;
+    }
+
+    try {
+      const html = window.marked.parse(text, {
+        breaks: true,
+        gfm: true
+      });
+      content.innerHTML = window.DOMPurify.sanitize(html, {
+        ALLOWED_TAGS: [
+          "p", "br", "strong", "em", "ul", "ol", "li",
+          "blockquote", "code", "pre", "h1", "h2", "h3", "hr"
+        ],
+        ALLOWED_ATTR: [],
+        ALLOW_ARIA_ATTR: false,
+        ALLOW_DATA_ATTR: false
+      });
+    } catch (error) {
+      console.error("AI 답변의 Markdown을 표시하지 못했습니다.", error);
+      content.classList.add("is-plain-text");
+      content.textContent = text;
+    }
+
+    return content;
+  }
+
+  function appendAgentAnswer(text, actions = []) {
     document.getElementById("aiAgentLoading")?.remove();
 
     const answer = document.createElement("article");
@@ -66,12 +99,43 @@
     icon.dataset.aiBrandIcon = "";
     icon.setAttribute("aria-hidden", "true");
 
-    const paragraph = document.createElement("p");
-    paragraph.textContent = text;
+    answer.append(icon, renderSafeMarkdown(text));
 
-    answer.append(icon, paragraph);
+    const propertyActions = renderPropertyActionButtons(actions);
+    if (propertyActions) answer.appendChild(propertyActions);
+
     messages.appendChild(answer);
     renderBrandIcons();
+  }
+
+  function renderPropertyActionButtons(actions) {
+    if (!Array.isArray(actions)) return null;
+
+    const propertyIds = actions
+      .filter(action => action?.type === "HIGHLIGHT_PROPERTIES")
+      .flatMap(action => Array.isArray(action.property_ids) ? action.property_ids : [])
+      .map(String)
+      .filter((propertyId, index, ids) => ids.indexOf(propertyId) === index)
+      .slice(0, 5);
+
+    if (!propertyIds.length) return null;
+
+    const container = document.createElement("div");
+    container.className = "ai-agent-property-actions";
+
+    propertyIds.forEach((propertyId, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = `매물 ${index + 1} 상세보기`;
+      button.addEventListener("click", () => {
+        window.zipchatgoMapActions?.execute?.([
+          { type: "OPEN_PROPERTY", property_id: propertyId }
+        ]);
+      });
+      container.appendChild(button);
+    });
+
+    return container;
   }
 
   function getAppState() {
@@ -105,7 +169,14 @@
         throw new Error("AI response did not contain a message");
       }
 
-      appendAgentAnswer(data.message);
+      const actions = Array.isArray(data.actions) ? data.actions : [];
+      appendAgentAnswer(data.message, actions);
+
+      try {
+        await window.zipchatgoMapActions?.execute?.(actions);
+      } catch (actionError) {
+        console.error("AI 지도 Action을 실행하지 못했습니다.", actionError);
+      }
     } catch (error) {
       console.error("AI 에이전트 응답을 불러오지 못했습니다.", error);
       appendAgentAnswer("죄송합니다. 현재 AI 서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.");

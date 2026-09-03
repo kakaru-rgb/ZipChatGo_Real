@@ -10,6 +10,7 @@ let sigunguIndex = null;
 let dongIndex = null;
 
 let markerMap = new Map();
+let aiHighlightMarkerMap = new Map();
 let infoMarker = null;
 let renderTimer = null;
 
@@ -36,6 +37,15 @@ const FAVORITE_PROPERTY_STORAGE_KEY = "zipchatgo.favoritePropertyIds";
 const propertyPriceHistoryCache = new Map();
 let mobileMapView = "map";
 let favoritePropertyIds = loadFavoritePropertyIds();
+let currentMapLocation = null;
+let reverseGeocodeTimer = null;
+let reverseGeocodeRequestSequence = 0;
+const reverseGeocodeCache = new Map();
+let legalDongRegions = [];
+let selectedLegalDong = null;
+let hoveredLegalDong = null;
+let legalDongTooltipMarker = null;
+let legalDongPolygonClickTime = 0;
 
 const INITIAL_CENTER = new naver.maps.LatLng(37.40, 127.15);
 
@@ -55,6 +65,19 @@ const PROPERTY_MARKER_WIDTH = 62;
 const PROPERTY_MARKER_HEIGHT = 58;
 const MAX_VISIBLE_POI_MARKERS = 500;
 const MAX_BUS_ROUTES_PER_STOP = 30;
+const REVERSE_GEOCODE_DELAY_MS = 400;
+const REVERSE_GEOCODE_CACHE_LIMIT = 50;
+const LEGAL_DONG_GEOJSON_URL = "/data/bundang_legal_dong.geojson";
+const LEGAL_DONG_COLORS = Object.freeze([
+  "#f4a6a6",
+  "#f6c58f",
+  "#f3df8b",
+  "#a8d8a8",
+  "#9fd9d2",
+  "#a9c8f5",
+  "#c6b1eb",
+  "#e5add2"
+]);
 
 const PROPERTY_IMAGE_BASE_PATH = "/data/아파트_공통_이미지";
 const APARTMENT_IMAGE_COUNT = 93;
@@ -126,8 +149,14 @@ window.zipchatgoMapState = Object.freeze({
   getSnapshot: getAiAppState
 });
 
-loadProperties();
+const propertyDataReady = loadProperties();
+
+window.zipchatgoMapActions = Object.freeze({
+  execute: executeAiMapActions
+});
+
 loadPois();
+loadLegalDongBoundaries();
 
 function getAiAppState() {
   const center = map.getCenter();
@@ -143,13 +172,22 @@ function getAiAppState() {
       lng: center.lng()
     },
     zoom: map.getZoom(),
+    current_region: getCurrentMapLocation(center)?.region || null,
+    center_address: getCurrentMapLocation(center)?.address || null,
     map_bounds: {
       south: southWest.lat(),
       west: southWest.lng(),
       north: northEast.lat(),
       east: northEast.lng()
     },
-    selected_region: selectedProperty?.district || selectedProperty?.address || null,
+    selected_region: selectedLegalDong ? {
+      type: "legal_dong",
+      code: selectedLegalDong.code,
+      name: selectedLegalDong.name,
+      full_name: selectedLegalDong.fullName,
+      center: selectedLegalDong.center,
+      bounds: selectedLegalDong.bounds
+    } : null,
     selected_property_id: selectedProperty?.id != null ? String(selectedProperty.id) : null,
     favorite_property_ids: Array.from(favoritePropertyIds, String),
     filters: {
@@ -190,6 +228,7 @@ async function loadProperties() {
     map.setZoom(APP_START_ZOOM);
 
     bindEvents();
+    scheduleReverseGeocode();
 
     if (!openRequestedPropertyFromUrl()) {
       renderList([]);
@@ -268,10 +307,14 @@ function reportFallbackDataSource(response, dataLabel) {
 }
 
 function bindEvents() {
-  naver.maps.Event.addListener(map, "idle", scheduleRender);
+  naver.maps.Event.addListener(map, "idle", () => {
+    scheduleRender();
+    scheduleReverseGeocode();
+    clearSelectedLegalDongWhenOutOfView();
+  });
   naver.maps.Event.addListener(map, "dragstart", closeAllInfoPopups);
   naver.maps.Event.addListener(map, "zoomstart", closeAllInfoPopups);
-  naver.maps.Event.addListener(map, "click", handleDistanceMeasureClick);
+  naver.maps.Event.addListener(map, "click", handleMapClick);
   naver.maps.Event.addListener(map, "mousemove", handleDistanceMeasureMouseMove);
 
   document.getElementById("map").addEventListener("contextmenu", event => {
@@ -307,6 +350,10 @@ function bindEvents() {
   document.getElementById("distanceMeasureClear").addEventListener("click", () => {
     resetDistanceMeasurement({ keepOpen: true });
   });
+  document.getElementById("selectedLegalDongClear").addEventListener(
+    "click",
+    clearSelectedLegalDong
+  );
 
   document.querySelectorAll(".poi-toggle").forEach(button => {
     button.addEventListener("click", () => togglePoiCategory(button));
@@ -1019,19 +1066,7 @@ function createPropertyMarker(item) {
     map,
     clickable: !distanceMeasureActive,
     icon: {
-      content: `
-        <div class="property-marker">
-          <svg class="property-marker-shape" viewBox="0 0 62 58" aria-hidden="true">
-            <path d="M2 20Q1 18 3 17L28 2Q31 0 34 2L59 17Q61 18 60 20T57 22H56V54Q56 56 54 56H8Q6 56 6 54V22H5Q3 22 2 20Z"></path>
-            <path class="property-marker-roof-highlight" d="M4 17.5 28.5 2.7Q31 1.2 33.5 2.7L58 17.5Q59.5 18.5 58.5 20H3.5Q2.5 18.5 4 17.5Z"></path>
-          </svg>
-          <div class="property-area">${formatAreaPyeong(item.exclusive_area)}</div>
-          <div class="property-marker-price">
-              <span class="deal-type">매</span>
-              <span class="deal-price">${formatPriceToEok(item.sale_price)}</span>
-          </div>
-        </div>
-      `,
+      content: renderPropertyMarkerContent(item),
       anchor: new naver.maps.Point(
         PROPERTY_MARKER_WIDTH / 2,
         PROPERTY_MARKER_HEIGHT / 2
@@ -1047,6 +1082,366 @@ function createPropertyMarker(item) {
   });
 
   return marker;
+}
+
+async function loadLegalDongBoundaries() {
+  try {
+    const response = await fetch(LEGAL_DONG_GEOJSON_URL);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const geojson = await response.json();
+    const features = Array.isArray(geojson?.features) ? geojson.features : [];
+    legalDongRegions = features.map(createLegalDongRegion).filter(Boolean);
+
+    if (!legalDongRegions.length) {
+      throw new Error("법정동 경계가 없습니다.");
+    }
+  } catch (error) {
+    console.error("법정동 경계 데이터 로드 실패:", error);
+    reportMapDataError("법정동 경계를 불러오지 못했습니다.");
+  }
+}
+
+function createLegalDongRegion(feature, index) {
+  const code = String(feature?.properties?.legal_dong_code || "").trim();
+  const name = String(feature?.properties?.legal_dong_name || "").trim();
+  const geometry = feature?.geometry;
+
+  if (!code || !name || !geometry) return null;
+
+  const polygonCoordinates = geometry.type === "Polygon"
+    ? [geometry.coordinates]
+    : geometry.type === "MultiPolygon"
+      ? geometry.coordinates
+      : [];
+  if (!polygonCoordinates.length) return null;
+
+  const bounds = getLegalDongCoordinateBounds(polygonCoordinates);
+  if (!bounds) return null;
+
+  const region = {
+    code,
+    name,
+    fullName: `경기도 성남시 분당구 ${name}`,
+    color: LEGAL_DONG_COLORS[index % LEGAL_DONG_COLORS.length],
+    bounds,
+    center: {
+      lat: (bounds.south + bounds.north) / 2,
+      lng: (bounds.west + bounds.east) / 2
+    },
+    polygons: []
+  };
+
+  region.polygons = polygonCoordinates.map(coordinates => {
+    const polygon = new naver.maps.Polygon({
+      map,
+      paths: coordinates.map(ring => (
+        ring.map(([lng, lat]) => new naver.maps.LatLng(lat, lng))
+      )),
+      clickable: true,
+      zIndex: 1,
+      ...getLegalDongStyle(region)
+    });
+
+    naver.maps.Event.addListener(polygon, "mouseover", event => {
+      if (distanceMeasureActive) return;
+      hoveredLegalDong = region;
+      updateLegalDongStyles();
+      showLegalDongTooltip(region, event.coord);
+    });
+    naver.maps.Event.addListener(polygon, "mousemove", event => {
+      if (!distanceMeasureActive && legalDongTooltipMarker && event.coord) {
+        legalDongTooltipMarker.setPosition(event.coord);
+      }
+    });
+    naver.maps.Event.addListener(polygon, "mouseout", () => {
+      if (hoveredLegalDong === region) hoveredLegalDong = null;
+      updateLegalDongStyles();
+      hideLegalDongTooltip();
+    });
+    naver.maps.Event.addListener(polygon, "click", event => {
+      if (distanceMeasureActive) {
+        addDistanceMeasurePoint(event.coord);
+        return;
+      }
+      legalDongPolygonClickTime = Date.now();
+      selectLegalDong(region);
+    });
+
+    return polygon;
+  });
+
+  return region;
+}
+
+function getLegalDongCoordinateBounds(polygons) {
+  let south = Infinity;
+  let west = Infinity;
+  let north = -Infinity;
+  let east = -Infinity;
+
+  polygons.forEach(polygon => {
+    polygon.forEach(ring => {
+      ring.forEach(coordinate => {
+        const lng = Number(coordinate?.[0]);
+        const lat = Number(coordinate?.[1]);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+        south = Math.min(south, lat);
+        west = Math.min(west, lng);
+        north = Math.max(north, lat);
+        east = Math.max(east, lng);
+      });
+    });
+  });
+
+  return [south, west, north, east].every(Number.isFinite)
+    ? { south, west, north, east }
+    : null;
+}
+
+function getLegalDongStyle(region) {
+  const selected = selectedLegalDong === region;
+  const hovered = hoveredLegalDong === region;
+
+  return {
+    fillColor: region.color,
+    fillOpacity: selected ? 0.34 : hovered ? 0.22 : 0.035,
+    strokeColor: selected ? "#2878c8" : region.color,
+    strokeOpacity: selected ? 0.95 : hovered ? 0.8 : 0.42,
+    strokeWeight: selected ? 3 : hovered ? 2.5 : 1.25
+  };
+}
+
+function updateLegalDongStyles() {
+  legalDongRegions.forEach(region => {
+    const style = getLegalDongStyle(region);
+    region.polygons.forEach(polygon => polygon.setOptions(style));
+  });
+}
+
+function selectLegalDong(region) {
+  selectedLegalDong = region;
+  updateLegalDongStyles();
+  updateSelectedLegalDongBadge();
+}
+
+function clearSelectedLegalDong() {
+  if (!selectedLegalDong) return;
+  selectedLegalDong = null;
+  updateLegalDongStyles();
+  updateSelectedLegalDongBadge();
+}
+
+function clearSelectedLegalDongWhenOutOfView() {
+  if (!selectedLegalDong) return;
+
+  const viewport = map.getBounds();
+  const southWest = viewport.getSW();
+  const northEast = viewport.getNE();
+  const region = selectedLegalDong.bounds;
+  const intersects = !(
+    northEast.lat() < region.south ||
+    southWest.lat() > region.north ||
+    northEast.lng() < region.west ||
+    southWest.lng() > region.east
+  );
+
+  if (!intersects) clearSelectedLegalDong();
+}
+
+function updateSelectedLegalDongBadge() {
+  const badge = document.getElementById("selectedLegalDongBadge");
+  const name = document.getElementById("selectedLegalDongName");
+  if (!badge || !name) return;
+
+  badge.hidden = !selectedLegalDong;
+  name.textContent = selectedLegalDong?.fullName || "";
+}
+
+function showLegalDongTooltip(region, position) {
+  if (!position) return;
+
+  if (!legalDongTooltipMarker) {
+    legalDongTooltipMarker = new naver.maps.Marker({
+      map,
+      clickable: false,
+      zIndex: 1000,
+      icon: {
+        content: '<div class="legal-dong-tooltip"></div>',
+        anchor: new naver.maps.Point(0, 42)
+      }
+    });
+  }
+
+  legalDongTooltipMarker.setIcon({
+    content: `<div class="legal-dong-tooltip">${escapeHtml(region.name)}</div>`,
+    anchor: new naver.maps.Point(0, 42)
+  });
+  legalDongTooltipMarker.setPosition(position);
+  legalDongTooltipMarker.setMap(map);
+}
+
+function hideLegalDongTooltip() {
+  legalDongTooltipMarker?.setMap(null);
+}
+
+function scheduleReverseGeocode() {
+  clearTimeout(reverseGeocodeTimer);
+  reverseGeocodeTimer = setTimeout(updateCurrentMapLocation, REVERSE_GEOCODE_DELAY_MS);
+}
+
+function updateCurrentMapLocation() {
+  if (!naver.maps.Service?.reverseGeocode) return;
+
+  const center = map.getCenter();
+  const cacheKey = getReverseGeocodeCacheKey(center);
+  const cached = reverseGeocodeCache.get(cacheKey);
+
+  if (cached) {
+    currentMapLocation = cached;
+    return;
+  }
+
+  const requestSequence = ++reverseGeocodeRequestSequence;
+  naver.maps.Service.reverseGeocode({ coords: center }, (status, response) => {
+    if (
+      status !== naver.maps.Service.Status.OK ||
+      requestSequence !== reverseGeocodeRequestSequence ||
+      getReverseGeocodeCacheKey(map.getCenter()) !== cacheKey
+    ) return;
+
+    const result = response?.v2;
+    const regionResult = result?.results?.find(item => item?.region);
+    const region = regionResult
+      ? ["area1", "area2", "area3", "area4"]
+          .map(area => regionResult.region?.[area]?.name)
+          .filter(Boolean)
+          .join(" ")
+      : null;
+    const address = result?.address?.roadAddress || result?.address?.jibunAddress || region;
+
+    if (!region && !address) return;
+
+    currentMapLocation = { cacheKey, region, address };
+    reverseGeocodeCache.set(cacheKey, currentMapLocation);
+
+    if (reverseGeocodeCache.size > REVERSE_GEOCODE_CACHE_LIMIT) {
+      reverseGeocodeCache.delete(reverseGeocodeCache.keys().next().value);
+    }
+  });
+}
+
+function getCurrentMapLocation(center) {
+  if (!currentMapLocation) return null;
+  return currentMapLocation.cacheKey === getReverseGeocodeCacheKey(center)
+    ? currentMapLocation
+    : null;
+}
+
+function getReverseGeocodeCacheKey(position) {
+  return `${position.lat().toFixed(4)},${position.lng().toFixed(4)}`;
+}
+
+function renderPropertyMarkerContent(item, highlighted = false) {
+  const highlightClass = highlighted ? " is-ai-highlighted" : "";
+
+  return `
+    <div class="property-marker${highlightClass}">
+      <svg class="property-marker-shape" viewBox="0 0 62 58" aria-hidden="true">
+        <path d="M2 20Q1 18 3 17L28 2Q31 0 34 2L59 17Q61 18 60 20T57 22H56V54Q56 56 54 56H8Q6 56 6 54V22H5Q3 22 2 20Z"></path>
+        <path class="property-marker-roof-highlight" d="M4 17.5 28.5 2.7Q31 1.2 33.5 2.7L58 17.5Q59.5 18.5 58.5 20H3.5Q2.5 18.5 4 17.5Z"></path>
+      </svg>
+      <div class="property-area">${formatAreaPyeong(item.exclusive_area)}</div>
+      <div class="property-marker-price">
+          <span class="deal-type">매</span>
+          <span class="deal-price">${formatPriceToEok(item.sale_price)}</span>
+      </div>
+    </div>
+  `;
+}
+
+async function executeAiMapActions(actions) {
+  if (!Array.isArray(actions)) return;
+
+  await propertyDataReady;
+
+  actions.forEach(action => {
+    if (!action || typeof action.type !== "string") return;
+
+    if (action.type === "MOVE_MAP") {
+      const lat = Number(action.lat);
+      const lng = Number(action.lng);
+      const zoom = Number(action.zoom);
+
+      if (
+        Number.isFinite(lat) && lat >= -90 && lat <= 90 &&
+        Number.isFinite(lng) && lng >= -180 && lng <= 180 &&
+        Number.isInteger(zoom) && zoom >= APP_MIN_ZOOM && zoom <= APP_MAX_ZOOM
+      ) {
+        moveMapTo(new naver.maps.LatLng(lat, lng), zoom);
+      }
+      return;
+    }
+
+    if (action.type === "FIT_BOUNDS") {
+      const items = getPropertiesForAiAction(action.property_ids);
+      if (items.length) {
+        renderList(items);
+        fitMapToData(items);
+      }
+      return;
+    }
+
+    if (action.type === "HIGHLIGHT_PROPERTIES") {
+      highlightAiProperties(getPropertiesForAiAction(action.property_ids));
+      return;
+    }
+
+    if (action.type === "OPEN_PROPERTY") {
+      const item = allProperties.find(property => property.id === String(action.property_id));
+      if (!item) return;
+
+      openPropertyDetail(item);
+      moveMapTo(new naver.maps.LatLng(item.latitude, item.longitude), APP_MAX_ZOOM);
+    }
+  });
+}
+
+function getPropertiesForAiAction(propertyIds) {
+  if (!Array.isArray(propertyIds)) return [];
+
+  const ids = new Set(propertyIds.slice(0, 10).map(String));
+  return allProperties.filter(property => ids.has(property.id));
+}
+
+function highlightAiProperties(items) {
+  clearAiHighlightMarkers();
+
+  items.forEach(item => {
+    const marker = new naver.maps.Marker({
+      position: new naver.maps.LatLng(item.latitude, item.longitude),
+      map,
+      clickable: !distanceMeasureActive,
+      zIndex: 250,
+      icon: {
+        content: renderPropertyMarkerContent(item, true),
+        anchor: new naver.maps.Point(
+          PROPERTY_MARKER_WIDTH / 2,
+          PROPERTY_MARKER_HEIGHT / 2
+        )
+      }
+    });
+
+    naver.maps.Event.addListener(marker, "click", () => {
+      if (!distanceMeasureActive) renderList([item], { openMobileList: true });
+    });
+    aiHighlightMarkerMap.set(item.id, marker);
+  });
+}
+
+function clearAiHighlightMarkers() {
+  for (const marker of aiHighlightMarkerMap.values()) marker.setMap(null);
+  aiHighlightMarkerMap.clear();
 }
 
 /* ===========================
@@ -1492,8 +1887,14 @@ function resetDistanceMeasurement({ keepOpen = false } = {}) {
   updateDistanceMeasureUi();
 }
 
-function handleDistanceMeasureClick(event) {
-  addDistanceMeasurePoint(event.coord);
+function handleMapClick(event) {
+  if (distanceMeasureActive) {
+    addDistanceMeasurePoint(event.coord);
+    return;
+  }
+
+  if (Date.now() - legalDongPolygonClickTime < 150) return;
+  clearSelectedLegalDong();
 }
 
 function setMapMarkersInteractive(interactive) {
@@ -1503,6 +1904,16 @@ function setMapMarkersInteractive(interactive) {
 
   for (const marker of poiMarkerMap.values()) {
     marker.setClickable(interactive);
+  }
+
+  legalDongRegions.forEach(region => {
+    region.polygons.forEach(polygon => polygon.setOptions({ clickable: interactive }));
+  });
+
+  if (!interactive) {
+    hoveredLegalDong = null;
+    hideLegalDongTooltip();
+    updateLegalDongStyles();
   }
 }
 

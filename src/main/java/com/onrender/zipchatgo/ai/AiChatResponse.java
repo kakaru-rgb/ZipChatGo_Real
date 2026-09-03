@@ -1,4 +1,6 @@
 package com.onrender.zipchatgo.ai;
 
-public record AiChatResponse(String message) {
+import java.util.List;
+
+public record AiChatResponse(String message, List<AiUiAction> actions) {
 }
