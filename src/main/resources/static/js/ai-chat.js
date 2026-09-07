@@ -73,11 +73,29 @@
       content.innerHTML = window.DOMPurify.sanitize(html, {
         ALLOWED_TAGS: [
           "p", "br", "strong", "em", "ul", "ol", "li",
-          "blockquote", "code", "pre", "h1", "h2", "h3", "hr"
+          "blockquote", "code", "pre", "h1", "h2", "h3", "hr", "a"
         ],
-        ALLOWED_ATTR: [],
+        ALLOWED_ATTR: ["href"],
         ALLOW_ARIA_ATTR: false,
         ALLOW_DATA_ATTR: false
+      });
+      content.querySelectorAll("a[href]").forEach(link => {
+        try {
+          const url = new URL(link.getAttribute("href"), window.location.origin);
+          const isOfficialLawLink = url.protocol === "https:"
+            && (url.hostname === "law.go.kr" || url.hostname.endsWith(".law.go.kr"));
+
+          if (!isOfficialLawLink) {
+            link.replaceWith(document.createTextNode(link.textContent || "외부 링크"));
+            return;
+          }
+
+          link.href = url.href;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+        } catch (error) {
+          link.replaceWith(document.createTextNode(link.textContent || "잘못된 링크"));
+        }
       });
     } catch (error) {
       console.error("AI 답변의 Markdown을 표시하지 못했습니다.", error);

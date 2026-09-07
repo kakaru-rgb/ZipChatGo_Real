@@ -22,6 +22,7 @@ class FakeOpenAIProvider:
     def __init__(self) -> None:
         self.app_state = None
         self.get_adjacent_legal_dongs = None
+        self.search_real_estate_law = None
 
     def generate(
         self,
@@ -30,9 +31,11 @@ class FakeOpenAIProvider:
         search_properties=None,
         find_transit_station=None,
         get_adjacent_legal_dongs=None,
+        search_real_estate_law=None,
     ) -> AgentReply:
         self.app_state = app_state
         self.get_adjacent_legal_dongs = get_adjacent_legal_dongs
+        self.search_real_estate_law = search_real_estate_law
         return AgentReply(
             message=f"AI response to: {message}",
             actions=[HighlightPropertiesAction(property_ids=[427])],
@@ -111,6 +114,7 @@ def test_agent_chat_returns_provider_response() -> None:
     assert provider.app_state["current_region"] == "경기도 성남시 분당구 백현동"
     assert provider.app_state["filters"]["max_price"] == 800000000
     assert callable(provider.get_adjacent_legal_dongs)
+    assert callable(provider.search_real_estate_law)
 
 
 def test_agent_chat_rejects_empty_message() -> None:
@@ -139,6 +143,7 @@ class FailingOpenAIProvider:
         search_properties=None,
         find_transit_station=None,
         get_adjacent_legal_dongs=None,
+        search_real_estate_law=None,
     ) -> AgentReply:
         raise APIConnectionError(request=httpx.Request("POST", "https://api.openai.com"))
 

@@ -12,6 +12,14 @@ def get_openai_api_key() -> str:
     return os.getenv("OPENAI_API_KEY", "").strip()
 
 
+def get_law_api_oc() -> str:
+    return os.getenv("LAW_API_OC", "").strip()
+
+
+def get_law_vector_store_id() -> str:
+    return os.getenv("LAW_VECTOR_STORE_ID", "").strip()
+
+
 def get_openai_model() -> str:
     return os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
 

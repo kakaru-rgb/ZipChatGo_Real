@@ -97,6 +97,7 @@ def test_generate_executes_property_search_and_returns_final_answer() -> None:
         if tool["name"] not in {
             "find_transit_station",
             "get_adjacent_legal_dongs",
+            "search_real_estate_law",
         }
     ]
     second_input = client.responses.create.call_args_list[1].kwargs["input"]
@@ -532,3 +533,216 @@ def test_generate_does_not_force_region_selection_for_property_search() -> None:
     }
     assert "move_map" in offered_tool_names
     assert result.actions == []
+
+
+def test_generate_executes_law_search_and_returns_results_to_model() -> None:
+    client = Mock()
+    law_call = SimpleNamespace(
+        type="function_call",
+        name="search_real_estate_law",
+        arguments=json.dumps({"query": "전입신고하면 대항력은 언제 생겨?"}),
+        call_id="law-search-1",
+    )
+    client.responses.create.side_effect = [
+        SimpleNamespace(output=[law_call], output_text=""),
+        SimpleNamespace(
+            output=[],
+            output_text="주택임대차보호법 제3조에 따르면 다음 날부터 효력이 생깁니다.",
+        ),
+    ]
+    search_law = Mock(
+        return_value={
+            "query": "전입신고하면 대항력은 언제 생겨?",
+            "total_count": 1,
+            "results": [
+                {
+                    "law_name": "주택임대차보호법",
+                    "article_number": "제3조",
+                    "text": "주택의 인도와 주민등록을 마친 때에는 그 다음 날부터 효력이 생긴다.",
+                    "effective_date": "2026-01-02",
+                    "source_url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=276291",
+                    "score": 0.91,
+                }
+            ],
+        }
+    )
+
+    with patch("app.providers.openai_provider.OpenAI", return_value=client):
+        provider = OpenAIProvider("test-key", "test-model", "instructions")
+        result = provider.generate(
+            "전입신고하면 대항력이 언제 생겨?",
+            search_real_estate_law=search_law,
+        )
+
+    search_law.assert_called_once_with(
+        {
+            "query": (
+                "사용자 질문: 전입신고하면 대항력이 언제 생겨?\n"
+                "핵심 법률 검색어: 전입신고하면 대항력은 언제 생겨?"
+            )
+        }
+    )
+    first_tools = client.responses.create.call_args_list[0].kwargs["tools"]
+    assert any(tool["name"] == "search_real_estate_law" for tool in first_tools)
+    second_input = client.responses.create.call_args_list[1].kwargs["input"]
+    output = json.loads(second_input[-2]["output"])
+    assert output["results"][0]["article_number"] == "제3조"
+    assert second_input[-1]["role"] == "developer"
+    assert "rank 1" in second_input[-1]["content"]
+    assert "제3조" in result.message
+    assert "관련 법령" in result.message
+    assert "국가법령정보센터에서 확인하기" in result.message
+    assert result.actions == []
+
+
+def test_generate_normalizes_model_law_link_text() -> None:
+    client = Mock()
+    law_call = SimpleNamespace(
+        type="function_call",
+        name="search_real_estate_law",
+        arguments=json.dumps({"query": "대항력 발생 시점"}),
+        call_id="law-search-link-label",
+    )
+    source_url = "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=276291"
+    client.responses.create.side_effect = [
+        SimpleNamespace(output=[law_call], output_text=""),
+        SimpleNamespace(
+            output=[],
+            output_text=(
+                "주택임대차보호법 제3조에 따르면 다음 날부터 효력이 생깁니다.\n\n"
+                f"자세한 내용은 [**여기서 확인하실 수 있습니다**]({source_url})."
+            ),
+        ),
+    ]
+    search_law = Mock(
+        return_value={
+            "total_count": 1,
+            "results": [
+                {
+                    "law_name": "주택임대차보호법",
+                    "article_number": "제3조",
+                    "effective_date": "2026-01-02",
+                    "text": "그 다음 날부터 효력이 생긴다.",
+                    "source_url": source_url,
+                }
+            ],
+        }
+    )
+
+    with patch("app.providers.openai_provider.OpenAI", return_value=client):
+        provider = OpenAIProvider("test-key", "test-model", "instructions")
+        result = provider.generate(
+            "전입신고를 하면 대항력은 언제 생겨?",
+            search_real_estate_law=search_law,
+        )
+
+    assert "여기서 확인하실 수 있습니다" not in result.message
+    assert result.message.count("국가법령정보센터에서 확인하기") == 1
+    assert result.message.count(source_url) == 1
+
+
+def test_generate_blocks_ungrounded_law_answer_when_search_is_empty() -> None:
+    client = Mock()
+    law_call = SimpleNamespace(
+        type="function_call",
+        name="search_real_estate_law",
+        arguments=json.dumps({"query": "대항력 발생 시점"}),
+        call_id="law-search-empty",
+    )
+    client.responses.create.side_effect = [
+        SimpleNamespace(output=[law_call], output_text=""),
+        SimpleNamespace(output=[], output_text="신고한 날부터 효력이 생깁니다."),
+    ]
+    search_law = Mock(
+        return_value={"query": "대항력 발생 시점", "total_count": 0, "results": []}
+    )
+
+    with patch("app.providers.openai_provider.OpenAI", return_value=client):
+        provider = OpenAIProvider("test-key", "test-model", "instructions")
+        result = provider.generate(
+            "전입신고를 하면 대항력은 언제 생겨?",
+            search_real_estate_law=search_law,
+        )
+
+    assert "공식 현행 법령 검색" in result.message
+    assert "신고한 날부터" not in result.message
+
+
+def test_generate_blocks_law_citation_not_present_in_search_results() -> None:
+    client = Mock()
+    law_call = SimpleNamespace(
+        type="function_call",
+        name="search_real_estate_law",
+        arguments=json.dumps({"query": "대항력 발생 시점"}),
+        call_id="law-search-mismatch",
+    )
+    client.responses.create.side_effect = [
+        SimpleNamespace(output=[law_call], output_text=""),
+        SimpleNamespace(
+            output=[],
+            output_text="주택임대차보호법 제3조의3에 따르면 당일부터 효력이 생깁니다.",
+        ),
+    ]
+    search_law = Mock(
+        return_value={
+            "query": "대항력 발생 시점",
+            "total_count": 1,
+            "results": [
+                {
+                    "law_name": "주택임대차보호법",
+                    "article_number": "제3조",
+                    "text": "그 다음 날부터 효력이 생긴다.",
+                    "source_url": "https://www.law.go.kr/example",
+                }
+            ],
+        }
+    )
+
+    with patch("app.providers.openai_provider.OpenAI", return_value=client):
+        provider = OpenAIProvider("test-key", "test-model", "instructions")
+        result = provider.generate(
+            "전입신고를 하면 대항력은 언제 생겨?",
+            search_real_estate_law=search_law,
+        )
+
+    assert "조문 인용이 일치하지 않아" in result.message
+    assert "당일부터" not in result.message
+
+
+def test_generate_limits_augmented_law_query_to_schema_length() -> None:
+    client = Mock()
+    law_call = SimpleNamespace(
+        type="function_call",
+        name="search_real_estate_law",
+        arguments=json.dumps({"query": "대항력 발생 시점"}),
+        call_id="law-search-long-query",
+    )
+    client.responses.create.side_effect = [
+        SimpleNamespace(output=[law_call], output_text=""),
+        SimpleNamespace(output=[], output_text="근거를 찾지 못했습니다."),
+    ]
+    search_law = Mock(return_value={"total_count": 0, "results": []})
+
+    with patch("app.providers.openai_provider.OpenAI", return_value=client):
+        provider = OpenAIProvider("test-key", "test-model", "instructions")
+        provider.generate("전입신고 " * 150, search_real_estate_law=search_law)
+
+    assert len(search_law.call_args.args[0]["query"]) == 500
+
+
+def test_generate_does_not_call_law_search_for_property_request() -> None:
+    client = Mock()
+    client.responses.create.return_value = SimpleNamespace(
+        output=[],
+        output_text="매물 검색 조건을 확인하겠습니다.",
+    )
+    search_law = Mock()
+
+    with patch("app.providers.openai_provider.OpenAI", return_value=client):
+        provider = OpenAIProvider("test-key", "test-model", "instructions")
+        provider.generate(
+            "판교역 8억 이하 아파트 찾아줘.",
+            search_real_estate_law=search_law,
+        )
+
+    search_law.assert_not_called()

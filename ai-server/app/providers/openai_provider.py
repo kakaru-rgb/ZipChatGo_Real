@@ -1,10 +1,11 @@
 import json
-from collections.abc import Callable
+import re
 from typing import Any
 
 from openai import OpenAI
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 
+from app.providers.llm_provider import AgentReply, ToolHandler
 from app.schemas import (
     BUNDANG_LEGAL_DONG_NAME_VALUES,
     FitBoundsAction,
@@ -45,6 +46,36 @@ SEARCH_PROPERTIES_TOOL = {
             },
         },
         "required": ["keyword", "property_type", "max_price"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+SEARCH_REAL_ESTATE_LAW_TOOL = {
+    "type": "function",
+    "name": "search_real_estate_law",
+    "description": (
+        "국가법령정보센터에서 수집해 색인한 현행 부동산 법령 조문을 검색합니다. "
+        "임대차, 대항력, 우선변제권, 보증금, 부동산 계약의 법적 효력, "
+        "상가 임대차, 매매·계약금·계약 해제, 부동산 등기, 집합건물 관리, "
+        "개업공인중개사의 확인·설명 의무나 책임, 부동산 거래신고 의무·기한처럼 "
+        "법령 근거가 필요한 질문에 사용합니다. 지도 이동, 매물 검색·추천, 면적·가격 확인에는 사용하지 않습니다."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": (
+                    "사용자의 질문을 법령 검색에 적합한 핵심 법률 용어로 정리한 검색어. "
+                    "예: '중개사가 중요 내용을 설명하지 않았어'는 "
+                    "'공인중개사 중개대상물 확인 설명 의무'로 검색합니다."
+                ),
+                "minLength": 1,
+                "maxLength": 500,
+            }
+        },
+        "required": ["query"],
         "additionalProperties": False,
     },
     "strict": True,
@@ -216,6 +247,7 @@ GET_ADJACENT_LEGAL_DONGS_TOOL = {
 
 AGENT_TOOLS = [
     SEARCH_PROPERTIES_TOOL,
+    SEARCH_REAL_ESTATE_LAW_TOOL,
     FIND_TRANSIT_STATION_TOOL,
     MOVE_MAP_TOOL,
     ZOOM_MAP_TOOL,
@@ -250,6 +282,16 @@ App State의 zoom과 move_map의 zoom은 사용자 화면에 표시되는 0~8 �
 특정 위치로 move_map을 호출할 때는 zoom을 6 이상으로 지정하여 목적지가 분명히 보이게 하세요.
 사용자가 '확대해줘', '축소해줘'처럼 현재 위치에서 확대·축소만 요청하면 zoom_map을 호출하세요.
 '조금'은 1단계, 별도 정도 표현이 없으면 2단계, '많이'는 3단계로 조정하세요.
+법률상 권리·의무·효력·기한·책임의 근거가 필요한 질문에는 search_real_estate_law를 사용하세요.
+지도 이동, 매물 검색·추천, 매물 가격·면적 확인에는 법률 검색을 사용하지 마세요.
+법률 답변은 Tool 결과에 실제로 포함된 법령명, 조문 번호와 내용만 근거로 작성하세요.
+검색 결과가 없거나 질문에 충분하지 않으면 근거가 부족하다고 명확히 말하고 조문을 추측하지 마세요.
+Tool 결과에 없는 판례나 행정해석을 확인한 것처럼 말하지 마세요.
+가능하면 답변에 법령명·조문 번호·시행일을 표시하세요. 공식 출처 링크를 직접 작성한다면
+링크 문구는 반드시 '국가법령정보센터에서 확인하기'만 사용하세요.
+법률 검색 결과는 rank 숫자가 작고 score가 높을수록 관련성이 높습니다. rank 1 조문을 우선 검토하고,
+다른 조문은 질문에 직접 관련된 내용이 실제 본문에 있을 때만 보충 근거로 사용하세요.
+article_number와 article_title은 검색 결과의 값을 그대로 사용하고 비슷한 조문 번호로 바꾸지 마세요.
 """.strip()
 
 
@@ -257,9 +299,16 @@ class OpenAIToolLoopError(RuntimeError):
     """Raised when the model continues requesting tools beyond the safety limit."""
 
 
-class AgentReply(BaseModel):
-    message: str
-    actions: list[UiAction] = Field(default_factory=list)
+SAFE_LAW_NO_RESULT_MESSAGE = (
+    "공식 현행 법령 검색에서 질문에 답할 만큼 관련된 조문을 찾지 못했습니다. "
+    "질문의 계약 유형과 상황을 조금 더 구체적으로 알려주시거나, 최신 공식 법령과 "
+    "전문가를 통해 확인해 주세요."
+)
+
+SAFE_LAW_CITATION_MISMATCH_MESSAGE = (
+    "검색된 공식 법령 근거와 답변의 조문 인용이 일치하지 않아 답변을 제공하지 "
+    "않았습니다. 질문을 조금 더 구체적으로 말씀해 주시면 다시 확인하겠습니다."
+)
 
 
 class OpenAIProvider:
@@ -272,11 +321,10 @@ class OpenAIProvider:
         self,
         message: str,
         app_state: dict[str, Any] | None = None,
-        search_properties: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
-        find_transit_station: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
-        get_adjacent_legal_dongs: Callable[
-            [dict[str, Any]], dict[str, Any]
-        ] | None = None,
+        search_properties: ToolHandler | None = None,
+        find_transit_station: ToolHandler | None = None,
+        get_adjacent_legal_dongs: ToolHandler | None = None,
+        search_real_estate_law: ToolHandler | None = None,
     ) -> AgentReply:
         input_items: str | list[dict[str, str]] = message
         if app_state is not None:
@@ -297,6 +345,7 @@ class OpenAIProvider:
             search_properties is None
             and find_transit_station is None
             and get_adjacent_legal_dongs is None
+            and search_real_estate_law is None
         ):
             response = self._client.responses.create(
                 model=self._model,
@@ -313,6 +362,8 @@ class OpenAIProvider:
         actions: list[UiAction] = []
         searched_properties: list[dict[str, Any]] = []
         searched_stations: list[dict[str, Any]] = []
+        law_search_attempted = False
+        law_search_results: list[dict[str, Any]] = []
         station_search_allowed = "역" in message
         required_region_name = _find_legal_dong_map_request(message)
         required_adjacency_region = _find_legal_dong_adjacency_request(
@@ -326,6 +377,8 @@ class OpenAIProvider:
             excluded_tool_names.add("find_transit_station")
         if get_adjacent_legal_dongs is None:
             excluded_tool_names.add("get_adjacent_legal_dongs")
+        if search_real_estate_law is None:
+            excluded_tool_names.add("search_real_estate_law")
         if required_region_name:
             excluded_tool_names.add("move_map")
         available_tools = [
@@ -381,10 +434,17 @@ class OpenAIProvider:
                     actions = _with_default_station_action(actions, searched_stations)
                 if required_region_name:
                     actions = _with_required_region_selection(actions, required_region_name)
-                return AgentReply(message=response.output_text, actions=actions)
+                message_text = response.output_text
+                if law_search_attempted:
+                    message_text = _ground_law_response(
+                        message_text,
+                        law_search_results,
+                    )
+                return AgentReply(message=message_text, actions=actions)
 
             running_input.extend(response.output)
             for function_call in function_calls:
+                post_tool_instruction = None
                 if function_call.name == "search_properties" and search_properties:
                     arguments = json.loads(function_call.arguments)
                     selected_region = app_state.get("selected_region") if app_state else None
@@ -434,6 +494,33 @@ class OpenAIProvider:
                         }
                     else:
                         result = get_adjacent_legal_dongs(arguments)
+                elif (
+                    function_call.name == "search_real_estate_law"
+                    and search_real_estate_law
+                ):
+                    arguments = json.loads(function_call.arguments)
+                    model_query = str(arguments.get("query", "")).strip()
+                    if model_query and model_query != message.strip():
+                        arguments["query"] = (
+                            f"사용자 질문: {message.strip()}\n"
+                            f"핵심 법률 검색어: {model_query}"
+                        )[:500]
+                    result = search_real_estate_law(arguments)
+                    law_search_attempted = True
+                    law_search_results.extend(result.get("results", []))
+                    if result.get("total_count", 0) == 0:
+                        post_tool_instruction = (
+                            "공식 법령 검색 결과가 0건입니다. 일반 지식으로 법률상 시점, "
+                            "요건, 권리 또는 의무를 보완하지 말고 공식 근거를 찾지 못했다고만 "
+                            "답하세요."
+                        )
+                    else:
+                        post_tool_instruction = (
+                            "방금 반환된 법률 검색 결과는 관련도 순입니다. rank 1의 본문을 "
+                            "먼저 질문과 대조하고, 답변에 쓰는 법령명·조문 번호·시행일은 "
+                            "결과 필드의 값을 정확히 복사하세요. 질문에 답하는 문구가 결과 "
+                            "본문에 없으면 추측하지 말고 근거가 부족하다고 답하세요."
+                        )
                 else:
                     action = _parse_ui_action(
                         function_call.name,
@@ -474,8 +561,87 @@ class OpenAIProvider:
                         ),
                     }
                 )
+                if post_tool_instruction:
+                    running_input.append(
+                        {"role": "developer", "content": post_tool_instruction}
+                    )
 
         raise OpenAIToolLoopError("OpenAI tool call limit exceeded")
+
+
+def _ground_law_response(
+    message: str,
+    search_results: list[dict[str, Any]],
+) -> str:
+    if not search_results:
+        return SAFE_LAW_NO_RESULT_MESSAGE
+
+    allowed_law_names = {
+        str(item.get("law_name", "")).strip()
+        for item in search_results
+        if str(item.get("law_name", "")).strip()
+    }
+    allowed_articles = {
+        _normalize_article_number(str(item.get("article_number", "")))
+        for item in search_results
+        if str(item.get("article_number", "")).strip()
+    }
+    cited_articles = {
+        _normalize_article_number(match)
+        for match in re.findall(r"제\s*\d+조(?:의\s*\d+)?", message)
+    }
+    cites_allowed_law = any(law_name in message for law_name in allowed_law_names)
+    if (
+        not cited_articles
+        or not cited_articles.issubset(allowed_articles)
+        or not cites_allowed_law
+    ):
+        return SAFE_LAW_CITATION_MISMATCH_MESSAGE
+
+    source_lines = []
+    for item in search_results:
+        law_name = str(item.get("law_name", "")).strip()
+        article_number = str(item.get("article_number", "")).strip()
+        source_url = str(item.get("source_url", "")).strip()
+        normalized_article = _normalize_article_number(article_number)
+        if (
+            law_name not in message
+            or normalized_article not in cited_articles
+            or not source_url
+        ):
+            continue
+        effective_date = str(item.get("effective_date", "")).strip()
+        effective_suffix = f", 시행 {effective_date}" if effective_date else ""
+        source_line = (
+            f"- {law_name} {article_number}{effective_suffix}: "
+            f"[국가법령정보센터에서 확인하기]({source_url})"
+        )
+        if source_line not in source_lines:
+            source_lines.append(source_line)
+
+    message_without_source_links = _remove_model_law_source_lines(message)
+    if source_lines:
+        return (
+            f"{message_without_source_links.rstrip()}\n\n관련 법령\n\n"
+            + "\n".join(source_lines)
+        )
+    return message_without_source_links
+
+
+def _normalize_article_number(value: str) -> str:
+    return re.sub(r"\s+", "", value)
+
+
+def _remove_model_law_source_lines(message: str) -> str:
+    law_link_pattern = (
+        r"\[[^\]]+\]\(https://(?:[A-Za-z0-9-]+\.)*law\.go\.kr/[^)]+\)"
+    )
+    remaining_lines = [
+        line
+        for line in message.splitlines()
+        if not re.search(law_link_pattern, line, flags=re.IGNORECASE)
+    ]
+    return "\n".join(remaining_lines).strip()
 
 
 def _find_legal_dong_map_request(message: str) -> str | None:

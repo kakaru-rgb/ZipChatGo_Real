@@ -19,3 +19,9 @@ def test_prompt_limits_answers_to_real_estate_and_zipchatgo() -> None:
 def test_prompt_requires_property_search_tool_for_current_listings() -> None:
     assert "반드시 search_properties Tool을 사용" in REAL_ESTATE_AGENT_INSTRUCTIONS
     assert "지도에 표시했다고 말하지 않습니다" in REAL_ESTATE_AGENT_INSTRUCTIONS
+
+
+def test_prompt_requires_grounded_law_answers() -> None:
+    assert "반드시 search_real_estate_law Tool을 사용" in REAL_ESTATE_AGENT_INSTRUCTIONS
+    assert "검색되지 않은 법령이나 조문을 만들지 않으며" in REAL_ESTATE_AGENT_INSTRUCTIONS
+    assert "판례나 행정해석을 확인한 것처럼 단정하지 않습니다" in REAL_ESTATE_AGENT_INSTRUCTIONS

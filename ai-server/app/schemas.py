@@ -168,3 +168,7 @@ class TransitStationSearchArguments(BaseModel):
 class TransitStationSearchResult(BaseModel):
     total_count: int = Field(ge=0)
     stations: list[dict[str, Any]]
+
+
+class LawSearchArguments(BaseModel):
+    query: str = Field(min_length=1, max_length=500)

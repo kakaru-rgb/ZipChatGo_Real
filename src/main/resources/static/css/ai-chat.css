@@ -122,6 +122,13 @@
   white-space: pre;
 }
 .ai-agent-markdown pre code { padding: 0; }
+.ai-agent-markdown a {
+  color: #2563eb;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ai-agent-markdown a:hover { color: #1d4ed8; }
 
 .ai-agent-property-actions {
   margin-top: 12px;
