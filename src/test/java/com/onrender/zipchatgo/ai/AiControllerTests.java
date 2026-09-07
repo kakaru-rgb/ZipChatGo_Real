@@ -62,11 +62,15 @@ class AiControllerTests {
 						      "type": "MOVE_MAP",
 						      "lat": 37.394,
 						      "lng": 127.111,
-						      "zoom": 17
+						      "zoom": 7
 						    },
 						    {
 						      "type": "HIGHLIGHT_PROPERTIES",
 						      "property_ids": [427]
+						    },
+						    {
+						      "type": "ZOOM_MAP",
+						      "delta": 1
 						    }
 						  ]
 						}
@@ -92,11 +96,15 @@ class AiControllerTests {
 						      "type": "MOVE_MAP",
 						      "lat": 37.394,
 						      "lng": 127.111,
-						      "zoom": 17
+						      "zoom": 7
 						    },
 						    {
 						      "type": "HIGHLIGHT_PROPERTIES",
 						      "property_ids": [427]
+						    },
+						    {
+						      "type": "ZOOM_MAP",
+						      "delta": 1
 						    }
 						  ]
 						}

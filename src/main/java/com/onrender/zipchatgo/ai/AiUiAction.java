@@ -11,6 +11,8 @@ public record AiUiAction(
         Double lat,
         Double lng,
         Integer zoom,
+        Integer delta,
         List<Long> propertyIds,
-        Long propertyId) {
+        Long propertyId,
+        String regionName) {
 }

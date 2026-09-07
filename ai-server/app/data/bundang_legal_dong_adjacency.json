@@ -1,0 +1,170 @@
+{
+  "source": "bundang_legal_dong.geojson",
+  "adjacency_definition": "shared_boundary_longer_than_1_meter",
+  "regions": {
+    "분당동": {
+      "code": "41135101",
+      "adjacent_regions": [
+        {"code": "41135102", "name": "수내동", "shared_boundary_meters": 2131.4},
+        {"code": "41135104", "name": "율동", "shared_boundary_meters": 389.7},
+        {"code": "41135105", "name": "서현동", "shared_boundary_meters": 1814.2}
+      ]
+    },
+    "수내동": {
+      "code": "41135102",
+      "adjacent_regions": [
+        {"code": "41135101", "name": "분당동", "shared_boundary_meters": 2131.4},
+        {"code": "41135103", "name": "정자동", "shared_boundary_meters": 4019.7},
+        {"code": "41135105", "name": "서현동", "shared_boundary_meters": 1663.9},
+        {"code": "41135110", "name": "백현동", "shared_boundary_meters": 374.4}
+      ]
+    },
+    "정자동": {
+      "code": "41135103",
+      "adjacent_regions": [
+        {"code": "41135102", "name": "수내동", "shared_boundary_meters": 4019.7},
+        {"code": "41135110", "name": "백현동", "shared_boundary_meters": 1652.1},
+        {"code": "41135111", "name": "금곡동", "shared_boundary_meters": 2101.7},
+        {"code": "41135112", "name": "궁내동", "shared_boundary_meters": 1336.6},
+        {"code": "41135114", "name": "구미동", "shared_boundary_meters": 1538.4}
+      ]
+    },
+    "율동": {
+      "code": "41135104",
+      "adjacent_regions": [
+        {"code": "41135101", "name": "분당동", "shared_boundary_meters": 389.7},
+        {"code": "41135105", "name": "서현동", "shared_boundary_meters": 1949.7},
+        {"code": "41135106", "name": "이매동", "shared_boundary_meters": 402.8},
+        {"code": "41135107", "name": "야탑동", "shared_boundary_meters": 1157.9}
+      ]
+    },
+    "서현동": {
+      "code": "41135105",
+      "adjacent_regions": [
+        {"code": "41135101", "name": "분당동", "shared_boundary_meters": 1814.2},
+        {"code": "41135102", "name": "수내동", "shared_boundary_meters": 1663.9},
+        {"code": "41135104", "name": "율동", "shared_boundary_meters": 1949.7},
+        {"code": "41135106", "name": "이매동", "shared_boundary_meters": 2741.9},
+        {"code": "41135110", "name": "백현동", "shared_boundary_meters": 109.5}
+      ]
+    },
+    "이매동": {
+      "code": "41135106",
+      "adjacent_regions": [
+        {"code": "41135104", "name": "율동", "shared_boundary_meters": 402.8},
+        {"code": "41135105", "name": "서현동", "shared_boundary_meters": 2741.9},
+        {"code": "41135107", "name": "야탑동", "shared_boundary_meters": 2199.8},
+        {"code": "41135110", "name": "백현동", "shared_boundary_meters": 90.2}
+      ]
+    },
+    "야탑동": {
+      "code": "41135107",
+      "adjacent_regions": [
+        {"code": "41135104", "name": "율동", "shared_boundary_meters": 1157.9},
+        {"code": "41135106", "name": "이매동", "shared_boundary_meters": 2199.8}
+      ]
+    },
+    "판교동": {
+      "code": "41135108",
+      "adjacent_regions": [
+        {"code": "41135109", "name": "삼평동", "shared_boundary_meters": 1547.4},
+        {"code": "41135110", "name": "백현동", "shared_boundary_meters": 3302.6},
+        {"code": "41135115", "name": "운중동", "shared_boundary_meters": 1114.7},
+        {"code": "41135118", "name": "하산운동", "shared_boundary_meters": 804.2}
+      ]
+    },
+    "삼평동": {
+      "code": "41135109",
+      "adjacent_regions": [
+        {"code": "41135108", "name": "판교동", "shared_boundary_meters": 1547.4},
+        {"code": "41135110", "name": "백현동", "shared_boundary_meters": 2240.3}
+      ]
+    },
+    "백현동": {
+      "code": "41135110",
+      "adjacent_regions": [
+        {"code": "41135102", "name": "수내동", "shared_boundary_meters": 374.4},
+        {"code": "41135103", "name": "정자동", "shared_boundary_meters": 1652.1},
+        {"code": "41135105", "name": "서현동", "shared_boundary_meters": 109.5},
+        {"code": "41135106", "name": "이매동", "shared_boundary_meters": 90.2},
+        {"code": "41135108", "name": "판교동", "shared_boundary_meters": 3302.6},
+        {"code": "41135109", "name": "삼평동", "shared_boundary_meters": 2240.3},
+        {"code": "41135112", "name": "궁내동", "shared_boundary_meters": 2635.3},
+        {"code": "41135116", "name": "대장동", "shared_boundary_meters": 218.5},
+        {"code": "41135118", "name": "하산운동", "shared_boundary_meters": 1374.4}
+      ]
+    },
+    "금곡동": {
+      "code": "41135111",
+      "adjacent_regions": [
+        {"code": "41135103", "name": "정자동", "shared_boundary_meters": 2101.7},
+        {"code": "41135112", "name": "궁내동", "shared_boundary_meters": 2824.7},
+        {"code": "41135113", "name": "동원동", "shared_boundary_meters": 3645.5},
+        {"code": "41135114", "name": "구미동", "shared_boundary_meters": 1791.7},
+        {"code": "41135116", "name": "대장동", "shared_boundary_meters": 487.9}
+      ]
+    },
+    "궁내동": {
+      "code": "41135112",
+      "adjacent_regions": [
+        {"code": "41135103", "name": "정자동", "shared_boundary_meters": 1336.6},
+        {"code": "41135110", "name": "백현동", "shared_boundary_meters": 2635.3},
+        {"code": "41135111", "name": "금곡동", "shared_boundary_meters": 2824.7},
+        {"code": "41135116", "name": "대장동", "shared_boundary_meters": 654.8}
+      ]
+    },
+    "동원동": {
+      "code": "41135113",
+      "adjacent_regions": [
+        {"code": "41135111", "name": "금곡동", "shared_boundary_meters": 3645.5},
+        {"code": "41135114", "name": "구미동", "shared_boundary_meters": 744.4},
+        {"code": "41135116", "name": "대장동", "shared_boundary_meters": 1088.2}
+      ]
+    },
+    "구미동": {
+      "code": "41135114",
+      "adjacent_regions": [
+        {"code": "41135103", "name": "정자동", "shared_boundary_meters": 1538.4},
+        {"code": "41135111", "name": "금곡동", "shared_boundary_meters": 1791.7},
+        {"code": "41135113", "name": "동원동", "shared_boundary_meters": 744.4}
+      ]
+    },
+    "운중동": {
+      "code": "41135115",
+      "adjacent_regions": [
+        {"code": "41135108", "name": "판교동", "shared_boundary_meters": 1114.7},
+        {"code": "41135116", "name": "대장동", "shared_boundary_meters": 102.0},
+        {"code": "41135117", "name": "석운동", "shared_boundary_meters": 2054.5},
+        {"code": "41135118", "name": "하산운동", "shared_boundary_meters": 3380.8}
+      ]
+    },
+    "대장동": {
+      "code": "41135116",
+      "adjacent_regions": [
+        {"code": "41135110", "name": "백현동", "shared_boundary_meters": 218.5},
+        {"code": "41135111", "name": "금곡동", "shared_boundary_meters": 487.9},
+        {"code": "41135112", "name": "궁내동", "shared_boundary_meters": 654.8},
+        {"code": "41135113", "name": "동원동", "shared_boundary_meters": 1088.2},
+        {"code": "41135115", "name": "운중동", "shared_boundary_meters": 102.0},
+        {"code": "41135117", "name": "석운동", "shared_boundary_meters": 2299.1},
+        {"code": "41135118", "name": "하산운동", "shared_boundary_meters": 1837.6}
+      ]
+    },
+    "석운동": {
+      "code": "41135117",
+      "adjacent_regions": [
+        {"code": "41135115", "name": "운중동", "shared_boundary_meters": 2054.5},
+        {"code": "41135116", "name": "대장동", "shared_boundary_meters": 2299.1}
+      ]
+    },
+    "하산운동": {
+      "code": "41135118",
+      "adjacent_regions": [
+        {"code": "41135108", "name": "판교동", "shared_boundary_meters": 804.2},
+        {"code": "41135110", "name": "백현동", "shared_boundary_meters": 1374.4},
+        {"code": "41135115", "name": "운중동", "shared_boundary_meters": 3380.8},
+        {"code": "41135116", "name": "대장동", "shared_boundary_meters": 1837.6}
+      ]
+    }
+  }
+}

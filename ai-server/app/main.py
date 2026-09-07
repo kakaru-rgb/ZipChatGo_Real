@@ -7,6 +7,10 @@ from app.config import get_openai_api_key, get_openai_model, get_spring_server_b
 from app.prompts import REAL_ESTATE_AGENT_INSTRUCTIONS
 from app.providers.openai_provider import OpenAIProvider, OpenAIToolLoopError
 from app.schemas import ChatRequest, ChatResponse
+from app.tools.legal_dong_adjacency import (
+    LegalDongAdjacencyError,
+    LegalDongAdjacencyTool,
+)
 from app.tools.property_search import PropertySearchError, PropertySearchTool
 from app.tools.transit_station import TransitStationSearchError, TransitStationTool
 
@@ -43,12 +47,20 @@ def get_transit_station_tool() -> TransitStationTool:
     return TransitStationTool(get_spring_server_base_url())
 
 
+@lru_cache
+def get_legal_dong_adjacency_tool() -> LegalDongAdjacencyTool:
+    return LegalDongAdjacencyTool()
+
+
 @app.post("/agent/chat", response_model=ChatResponse)
 def agent_chat(
     request: ChatRequest,
     provider: OpenAIProvider = Depends(get_openai_provider),
     property_search: PropertySearchTool = Depends(get_property_search_tool),
     transit_station: TransitStationTool = Depends(get_transit_station_tool),
+    legal_dong_adjacency: LegalDongAdjacencyTool = Depends(
+        get_legal_dong_adjacency_tool
+    ),
 ) -> ChatResponse:
     try:
         app_state = request.app_state.model_dump() if request.app_state else None
@@ -57,6 +69,7 @@ def agent_chat(
             app_state,
             property_search.search,
             transit_station.search,
+            legal_dong_adjacency.lookup,
         )
         return ChatResponse(message=result.message, actions=result.actions)
     except APIError as exception:
@@ -67,6 +80,7 @@ def agent_chat(
     except (
         PropertySearchError,
         TransitStationSearchError,
+        LegalDongAdjacencyError,
         OpenAIToolLoopError,
     ) as exception:
         raise HTTPException(

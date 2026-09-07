@@ -21,6 +21,7 @@ def test_agent_test_returns_hello() -> None:
 class FakeOpenAIProvider:
     def __init__(self) -> None:
         self.app_state = None
+        self.get_adjacent_legal_dongs = None
 
     def generate(
         self,
@@ -28,8 +29,10 @@ class FakeOpenAIProvider:
         app_state=None,
         search_properties=None,
         find_transit_station=None,
+        get_adjacent_legal_dongs=None,
     ) -> AgentReply:
         self.app_state = app_state
+        self.get_adjacent_legal_dongs = get_adjacent_legal_dongs
         return AgentReply(
             message=f"AI response to: {message}",
             actions=[HighlightPropertiesAction(property_ids=[427])],
@@ -47,7 +50,7 @@ def test_agent_chat_returns_provider_response() -> None:
                 "appState": {
                     "current_page": "map",
                     "map_center": {"lat": 37.4, "lng": 127.15},
-                    "zoom": 11,
+                    "zoom": 1,
                     "current_region": "경기도 성남시 분당구 백현동",
                     "center_address": "경기도 성남시 분당구 판교역로",
                     "map_bounds": {
@@ -55,6 +58,19 @@ def test_agent_chat_returns_provider_response() -> None:
                         "west": 127.0,
                         "north": 37.5,
                         "east": 127.3,
+                    },
+                    "current_legal_dong": {
+                        "type": "legal_dong",
+                        "code": "41135110",
+                        "name": "백현동",
+                        "full_name": "경기도 성남시 분당구 백현동",
+                        "center": {"lat": 37.39, "lng": 127.11},
+                        "bounds": {
+                            "south": 37.37,
+                            "west": 127.09,
+                            "north": 37.41,
+                            "east": 127.13,
+                        },
                     },
                     "selected_region": {
                         "type": "legal_dong",
@@ -91,8 +107,10 @@ def test_agent_chat_returns_provider_response() -> None:
     }
     assert provider.app_state["selected_property_id"] == "427"
     assert provider.app_state["selected_region"]["code"] == "41135103"
+    assert provider.app_state["current_legal_dong"]["name"] == "백현동"
     assert provider.app_state["current_region"] == "경기도 성남시 분당구 백현동"
     assert provider.app_state["filters"]["max_price"] == 800000000
+    assert callable(provider.get_adjacent_legal_dongs)
 
 
 def test_agent_chat_rejects_empty_message() -> None:
@@ -120,6 +138,7 @@ class FailingOpenAIProvider:
         app_state=None,
         search_properties=None,
         find_transit_station=None,
+        get_adjacent_legal_dongs=None,
     ) -> AgentReply:
         raise APIConnectionError(request=httpx.Request("POST", "https://api.openai.com"))
 

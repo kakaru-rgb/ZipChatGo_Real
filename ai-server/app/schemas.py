@@ -34,10 +34,11 @@ class SelectedRegion(BaseModel):
 class AppState(BaseModel):
     current_page: str
     map_center: MapCenter | None = None
-    zoom: int | None = None
+    zoom: int | None = Field(default=None, ge=0, le=8)
     current_region: str | None = None
     center_address: str | None = None
     map_bounds: MapBounds | None = None
+    current_legal_dong: SelectedRegion | None = None
     selected_region: SelectedRegion | str | None = None
     selected_property_id: str | None = None
     favorite_property_ids: list[str] = Field(default_factory=list)
@@ -55,7 +56,12 @@ class MoveMapAction(BaseModel):
     type: Literal["MOVE_MAP"] = "MOVE_MAP"
     lat: float = Field(ge=-90, le=90)
     lng: float = Field(ge=-180, le=180)
-    zoom: int = Field(ge=10, le=18)
+    zoom: int = Field(ge=6, le=8)
+
+
+class ZoomMapAction(BaseModel):
+    type: Literal["ZOOM_MAP"] = "ZOOM_MAP"
+    delta: Literal[-3, -2, -1, 1, 2, 3]
 
 
 class FitBoundsAction(BaseModel):
@@ -73,8 +79,66 @@ class OpenPropertyAction(BaseModel):
     property_id: int = Field(ge=1)
 
 
+BUNDANG_LEGAL_DONG_NAME_VALUES = (
+    "분당동",
+    "수내동",
+    "정자동",
+    "율동",
+    "서현동",
+    "이매동",
+    "야탑동",
+    "판교동",
+    "삼평동",
+    "백현동",
+    "금곡동",
+    "궁내동",
+    "동원동",
+    "구미동",
+    "운중동",
+    "대장동",
+    "석운동",
+    "하산운동",
+)
+
+
+BUNDANG_LEGAL_DONG_NAMES = Literal[
+    "분당동",
+    "수내동",
+    "정자동",
+    "율동",
+    "서현동",
+    "이매동",
+    "야탑동",
+    "판교동",
+    "삼평동",
+    "백현동",
+    "금곡동",
+    "궁내동",
+    "동원동",
+    "구미동",
+    "운중동",
+    "대장동",
+    "석운동",
+    "하산운동",
+]
+
+
+class SelectRegionAction(BaseModel):
+    type: Literal["SELECT_REGION"] = "SELECT_REGION"
+    region_name: BUNDANG_LEGAL_DONG_NAMES
+
+
+class AdjacentLegalDongArguments(BaseModel):
+    region_name: BUNDANG_LEGAL_DONG_NAMES
+
+
 UiAction = Annotated[
-    MoveMapAction | FitBoundsAction | HighlightPropertiesAction | OpenPropertyAction,
+    MoveMapAction
+    | ZoomMapAction
+    | FitBoundsAction
+    | HighlightPropertiesAction
+    | OpenPropertyAction
+    | SelectRegionAction,
     Field(discriminator="type"),
 ]
 

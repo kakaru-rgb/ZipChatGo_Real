@@ -92,6 +92,12 @@ aside.is-detail-open {
   height: 100%;
 }
 
+#map img,
+#map svg,
+#map canvas {
+  max-width: none;
+}
+
 .selected-legal-dong-badge {
   position: fixed;
   z-index: 9;
@@ -104,7 +110,7 @@ aside.is-detail-open {
   max-width: calc(100vw - 370px);
   padding: 9px 10px 9px 13px;
 
-  border: 1px solid rgba(40, 120, 200, 0.24);
+  border: 1px solid rgba(217, 79, 92, 0.28);
   border-radius: 999px;
   color: #32465f;
   background: rgba(255, 255, 255, 0.95);
@@ -140,28 +146,29 @@ aside.is-detail-open {
 
   border: 0;
   border-radius: 50%;
-  color: #62738a;
-  background: #edf4fb;
+  color: #a84450;
+  background: #fff0f2;
   cursor: pointer;
 }
 
 .selected-legal-dong-badge > button:hover {
-  color: #176fc4;
-  background: #dfedfb;
+  color: #c83748;
+  background: #ffe2e6;
 }
 
-.legal-dong-tooltip {
-  padding: 7px 11px;
-  border: 1px solid rgba(40, 120, 200, 0.2);
-  border-radius: 10px;
-  color: #2d4159;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 6px 18px rgba(17, 45, 78, 0.16);
-  font-size: 12px;
-  font-weight: 900;
+.selected-legal-dong-map-label {
+  padding: 8px 13px;
+  border: 2px solid rgba(255, 255, 255, 0.94);
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(190, 55, 70, 0.94);
+  box-shadow: 0 5px 16px rgba(112, 28, 39, 0.3);
+  font-size: 13px;
+  font-weight: 950;
   line-height: 1;
   white-space: nowrap;
   pointer-events: none;
+  transform: translate(-50%, -50%);
 }
 
 /* ===========================
@@ -1385,12 +1392,20 @@ aside.is-detail-open {
 
 .map-right-controls {
   grid-area: 1 / 1;
-  align-self: center;
+  align-self: stretch;
   justify-self: end;
   position: relative;
   z-index: 14;
 
-  margin: 0 16px 0 0;
+  height: calc(100% - var(--map-header-clearance));
+  margin: var(--map-header-clearance) 16px 0 0;
+  padding-top: 14px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
 }
 
 .poi-controls {
@@ -1893,12 +1908,112 @@ aside.is-detail-open {
 =========================== */
 
 .distance-measure-controls {
-  position: absolute;
-  right: 11px;
-  bottom: calc(100% + 8px);
+  position: relative;
   z-index: 2;
 
   width: 58px;
+}
+
+.map-zoom-level-indicator {
+  width: 58px;
+  margin: 0 0 8px;
+  padding: 8px;
+
+  border: 1px solid rgba(30, 136, 255, 0.14);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #53657b;
+  box-shadow: 0 9px 24px rgba(20, 46, 77, 0.14);
+  pointer-events: none;
+  user-select: none;
+}
+
+.map-zoom-level-scale {
+  position: relative;
+  height: 84px;
+}
+
+.map-zoom-level-track {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 7px;
+
+  width: 6px;
+  overflow: visible;
+
+  border-radius: 999px;
+  background: #e5edf6;
+}
+
+.map-zoom-level-fill {
+  position: absolute;
+  inset: auto 0 0;
+  height: 12.5%;
+
+  border-radius: inherit;
+  background: linear-gradient(0deg, #5aa8ff, #18bfa4);
+  transition: height 160ms ease;
+}
+
+.map-zoom-level-marker {
+  position: absolute;
+  bottom: 12.5%;
+  left: 50%;
+
+  width: 13px;
+  height: 13px;
+
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: #1687f7;
+  box-shadow: 0 1px 5px rgba(20, 90, 165, 0.38);
+  transform: translate(-50%, 50%);
+  transition: bottom 160ms ease;
+}
+
+.map-zoom-level-ticks {
+  position: absolute;
+  inset: 4px auto 4px 4px;
+  width: 20px;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.map-zoom-level-ticks span {
+  position: relative;
+  display: block;
+  height: 1px;
+}
+
+.map-zoom-level-ticks span::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+
+  width: 8px;
+  height: 1px;
+
+  background: #aebdcd;
+}
+
+.map-zoom-level-value {
+  position: absolute;
+  bottom: 12.5%;
+  left: 26px;
+
+  min-width: 15px;
+
+  color: #1479e7;
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1;
+  text-align: left;
+  transform: translateY(50%);
+  transition: bottom 160ms ease;
 }
 
 .distance-measure-toggle {
@@ -2381,6 +2496,8 @@ aside.is-detail-open {
     z-index: 15;
 
     width: auto;
+    height: auto;
+    padding-top: 0;
     margin: calc(
       var(--map-header-clearance) +
       var(--mobile-search-tools-height) +
@@ -2388,6 +2505,7 @@ aside.is-detail-open {
     ) 10px 0;
 
     pointer-events: none;
+    justify-content: flex-start;
   }
 
   .poi-controls {

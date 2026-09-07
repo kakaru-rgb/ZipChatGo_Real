@@ -144,6 +144,33 @@
 
     <div class="map-right-controls">
       <div class="distance-measure-controls" aria-label="지도 거리 측정 도구">
+        <div id="mapZoomLevelIndicator"
+             class="map-zoom-level-indicator"
+             role="meter"
+             aria-label="현재 지도 줌 레벨"
+             aria-valuemin="0"
+             aria-valuemax="8"
+             aria-valuenow="1">
+          <div class="map-zoom-level-scale" aria-hidden="true">
+            <span class="map-zoom-level-track">
+              <span id="mapZoomLevelFill" class="map-zoom-level-fill"></span>
+              <span id="mapZoomLevelMarker" class="map-zoom-level-marker"></span>
+            </span>
+            <output id="mapZoomLevelValue" class="map-zoom-level-value">1</output>
+            <span class="map-zoom-level-ticks">
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
+          </div>
+        </div>
+
         <button id="distanceMeasureToggle"
                 class="distance-measure-toggle"
                 type="button"

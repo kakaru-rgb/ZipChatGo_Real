@@ -6,11 +6,14 @@ from openai import OpenAI
 from pydantic import BaseModel, Field, ValidationError
 
 from app.schemas import (
+    BUNDANG_LEGAL_DONG_NAME_VALUES,
     FitBoundsAction,
     HighlightPropertiesAction,
     MoveMapAction,
     OpenPropertyAction,
+    SelectRegionAction,
     UiAction,
+    ZoomMapAction,
 )
 
 
@@ -74,15 +77,41 @@ FIND_TRANSIT_STATION_TOOL = {
 MOVE_MAP_TOOL = {
     "type": "function",
     "name": "move_map",
-    "description": "지도를 지정한 위도, 경도와 확대 단계로 이동합니다.",
+    "description": (
+        "지도를 지정한 위도·경도로 이동하고 목적지를 알아보기 쉬운 6~8 단계로 확대합니다. "
+        "이 단계는 사용자에게 표시되는 0~8 지도 줌 단계입니다. "
+        "특정 위치로 이동할 때 사용하며 현재의 낮은 zoom을 그대로 유지하지 않습니다."
+    ),
     "parameters": {
         "type": "object",
         "properties": {
             "lat": {"type": "number", "minimum": -90, "maximum": 90},
             "lng": {"type": "number", "minimum": -180, "maximum": 180},
-            "zoom": {"type": "integer", "minimum": 10, "maximum": 18},
+            "zoom": {"type": "integer", "minimum": 6, "maximum": 8},
         },
         "required": ["lat", "lng", "zoom"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+ZOOM_MAP_TOOL = {
+    "type": "function",
+    "name": "zoom_map",
+    "description": "현재 지도 중심을 유지하면서 지도를 상대적으로 확대하거나 축소합니다.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "delta": {
+                "type": "integer",
+                "enum": [-3, -2, -1, 1, 2, 3],
+                "description": (
+                    "확대는 양수, 축소는 음수입니다. '조금'은 1, 일반 요청은 2, "
+                    "'많이'는 3을 사용합니다."
+                ),
+            }
+        },
+        "required": ["delta"],
         "additionalProperties": False,
     },
     "strict": True,
@@ -141,19 +170,68 @@ OPEN_PROPERTY_TOOL = {
     "strict": True,
 }
 
+SELECT_REGION_TOOL = {
+    "type": "function",
+    "name": "select_region",
+    "description": (
+        "설명 중 특정 분당구 법정동 경계를 지도에 표시하고 해당 영역이 보이도록 이동합니다. "
+        "지역 경계를 시각적으로 보여주는 것이 도움이 되거나 사용자가 지역 선택을 요청할 때만 사용합니다."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "region_name": {
+                "type": "string",
+                "enum": list(BUNDANG_LEGAL_DONG_NAME_VALUES),
+                "description": "지도에 표시할 성남시 분당구 법정동 이름",
+            }
+        },
+        "required": ["region_name"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+GET_ADJACENT_LEGAL_DONGS_TOOL = {
+    "type": "function",
+    "name": "get_adjacent_legal_dongs",
+    "description": (
+        "성남시 분당구의 특정 법정동과 실제 경계를 공유하는 인접 법정동을 조회합니다. "
+        "'옆 동', '인접한 동', '맞닿은 지역', '이웃 동'을 묻는 질문에 사용합니다."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "region_name": {
+                "type": "string",
+                "enum": list(BUNDANG_LEGAL_DONG_NAME_VALUES),
+                "description": "인접 법정동을 조회할 성남시 분당구 법정동 이름",
+            }
+        },
+        "required": ["region_name"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
 AGENT_TOOLS = [
     SEARCH_PROPERTIES_TOOL,
     FIND_TRANSIT_STATION_TOOL,
     MOVE_MAP_TOOL,
+    ZOOM_MAP_TOOL,
     FIT_BOUNDS_TOOL,
     HIGHLIGHT_PROPERTIES_TOOL,
     OPEN_PROPERTY_TOOL,
+    SELECT_REGION_TOOL,
+    GET_ADJACENT_LEGAL_DONGS_TOOL,
 ]
 
 UI_ACTION_INSTRUCTIONS = """
 사용자가 매물을 찾아 지도에 보여 달라고 하면 search_properties를 먼저 호출하세요.
 현재 App State에 selected_region이 있고 사용자가 '여기', '이 동', '선택한 지역'을 말하면
 selected_region의 법정동을 현재 지도 bounds보다 우선해서 사용하세요.
+current_legal_dong은 GeoJSON 경계로 판정한 현재 지도 중심의 법정동입니다. selected_region이 없으면
+현재 위치를 설명할 때 current_legal_dong을 참고하세요.
 사용자가 '여기', '현재 화면', '이 주변'을 말하면 keyword는 null로 호출해 현재 지도 범위를 사용하세요.
 사용자가 '정자역'처럼 이름에 '역'을 명시하여 특정 역으로 지도 이동을 요청한 경우에만
 find_transit_station을 먼저 호출한 뒤, 반환된 첫 번째 역의 latitude와 longitude로 move_map을 호출하세요.
@@ -161,6 +239,17 @@ find_transit_station을 먼저 호출한 뒤, 반환된 첫 번째 역의 latitu
 검색 결과가 한 건이면 move_map과 highlight_properties를, 여러 건이면 fit_bounds와
 highlight_properties를 호출하세요. 상세 열기를 명확히 요청한 경우에만 open_property를
 호출하세요. Action에는 검색 결과 또는 현재 선택 매물의 ID만 사용하세요.
+특정 분당구 법정동의 경계를 설명과 함께 지도에 보여주는 것이 유용하거나 사용자가 선택을 요청하면
+select_region을 호출하세요. 분당구 목록에 없는 지역은 추측해서 선택하지 마세요.
+특정 법정동의 옆·인접·맞닿은·이웃 법정동을 물으면 반드시 get_adjacent_legal_dongs를 호출하세요.
+인접 여부는 Tool이 반환한 경계 공유 결과만 사용하고, 모델의 일반 지식으로 동 이름을 추가하거나 빼지 마세요.
+사용자가 '이 동' 또는 '여기'의 인접 지역을 물으면 selected_region을 우선하고,
+선택 지역이 없으면 current_legal_dong의 이름으로 조회하세요.
+App State의 zoom과 move_map의 zoom은 사용자 화면에 표시되는 0~8 단계입니다.
+내부 지도 SDK의 10~18 값은 언급하지 말고, 줌 단계를 설명할 때도 항상 0~8 단계를 사용하세요.
+특정 위치로 move_map을 호출할 때는 zoom을 6 이상으로 지정하여 목적지가 분명히 보이게 하세요.
+사용자가 '확대해줘', '축소해줘'처럼 현재 위치에서 확대·축소만 요청하면 zoom_map을 호출하세요.
+'조금'은 1단계, 별도 정도 표현이 없으면 2단계, '많이'는 3단계로 조정하세요.
 """.strip()
 
 
@@ -185,6 +274,9 @@ class OpenAIProvider:
         app_state: dict[str, Any] | None = None,
         search_properties: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         find_transit_station: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+        get_adjacent_legal_dongs: Callable[
+            [dict[str, Any]], dict[str, Any]
+        ] | None = None,
     ) -> AgentReply:
         input_items: str | list[dict[str, str]] = message
         if app_state is not None:
@@ -201,7 +293,11 @@ class OpenAIProvider:
                 {"role": "user", "content": message},
             ]
 
-        if search_properties is None and find_transit_station is None:
+        if (
+            search_properties is None
+            and find_transit_station is None
+            and get_adjacent_legal_dongs is None
+        ):
             response = self._client.responses.create(
                 model=self._model,
                 instructions=self._instructions,
@@ -218,11 +314,36 @@ class OpenAIProvider:
         searched_properties: list[dict[str, Any]] = []
         searched_stations: list[dict[str, Any]] = []
         station_search_allowed = "역" in message
-        available_tools = (
-            AGENT_TOOLS
-            if station_search_allowed
-            else [tool for tool in AGENT_TOOLS if tool["name"] != "find_transit_station"]
+        required_region_name = _find_legal_dong_map_request(message)
+        required_adjacency_region = _find_legal_dong_adjacency_request(
+            message,
+            app_state,
         )
+        excluded_tool_names: set[str] = set()
+        if search_properties is None:
+            excluded_tool_names.add("search_properties")
+        if not station_search_allowed or find_transit_station is None:
+            excluded_tool_names.add("find_transit_station")
+        if get_adjacent_legal_dongs is None:
+            excluded_tool_names.add("get_adjacent_legal_dongs")
+        if required_region_name:
+            excluded_tool_names.add("move_map")
+        available_tools = [
+            tool for tool in AGENT_TOOLS if tool["name"] not in excluded_tool_names
+        ]
+        request_instructions = f"{self._instructions}\n\n{UI_ACTION_INSTRUCTIONS}"
+        if required_region_name:
+            request_instructions += (
+                f"\n\n이번 요청은 분당구 법정동 '{required_region_name}'으로 지도 이동 또는 선택을 "
+                "요청한 것입니다. 좌표를 추측하는 move_map을 사용하지 말고 정확히 이 이름으로 "
+                "select_region을 호출하세요."
+            )
+        if required_adjacency_region:
+            request_instructions += (
+                f"\n\n이번 요청은 분당구 법정동 '{required_adjacency_region}'의 인접 법정동을 "
+                "묻는 질문입니다. 추측하지 말고 get_adjacent_legal_dongs 결과에 포함된 "
+                "법정동만 답변하세요."
+            )
         allowed_property_ids = {
             int(app_state["selected_property_id"])
             for _ in [0]
@@ -230,12 +351,25 @@ class OpenAIProvider:
             and str(app_state.get("selected_property_id", "")).isdigit()
         }
 
-        for _ in range(4):
+        for iteration in range(4):
+            request_options: dict[str, Any] = {
+                "model": self._model,
+                "instructions": request_instructions,
+                "tools": available_tools,
+                "input": running_input,
+            }
+            if (
+                iteration == 0
+                and required_adjacency_region
+                and get_adjacent_legal_dongs is not None
+            ):
+                request_options["tool_choice"] = {
+                    "type": "function",
+                    "name": "get_adjacent_legal_dongs",
+                }
+
             response = self._client.responses.create(
-                model=self._model,
-                instructions=f"{self._instructions}\n\n{UI_ACTION_INSTRUCTIONS}",
-                tools=available_tools,
-                input=running_input,
+                **request_options,
             )
             function_calls = [
                 item for item in response.output if item.type == "function_call"
@@ -245,6 +379,8 @@ class OpenAIProvider:
                     actions = _with_default_search_actions(actions, searched_properties)
                 if searched_stations:
                     actions = _with_default_station_action(actions, searched_stations)
+                if required_region_name:
+                    actions = _with_required_region_selection(actions, required_region_name)
                 return AgentReply(message=response.output_text, actions=actions)
 
             running_input.extend(response.output)
@@ -280,6 +416,24 @@ class OpenAIProvider:
                     else:
                         result = find_transit_station(arguments)
                         searched_stations = result.get("stations", [])
+                elif (
+                    function_call.name == "get_adjacent_legal_dongs"
+                    and get_adjacent_legal_dongs
+                ):
+                    arguments = json.loads(function_call.arguments)
+                    if (
+                        required_adjacency_region
+                        and arguments.get("region_name") != required_adjacency_region
+                    ):
+                        result = {
+                            "status": "rejected",
+                            "reason": (
+                                "Adjacency lookup must use the legal dong named in the request: "
+                                f"{required_adjacency_region}"
+                            ),
+                        }
+                    else:
+                        result = get_adjacent_legal_dongs(arguments)
                 else:
                     action = _parse_ui_action(
                         function_call.name,
@@ -288,6 +442,23 @@ class OpenAIProvider:
                     )
                     if action is None:
                         result = {"status": "rejected", "reason": "Invalid UI action"}
+                    elif required_region_name and isinstance(action, MoveMapAction):
+                        result = {
+                            "status": "rejected",
+                            "reason": (
+                                "Legal-dong map requests must use select_region instead of "
+                                "unverified coordinates"
+                            ),
+                        }
+                    elif (
+                        required_region_name
+                        and isinstance(action, SelectRegionAction)
+                        and action.region_name != required_region_name
+                    ):
+                        result = {
+                            "status": "rejected",
+                            "reason": f"Requested legal dong is '{required_region_name}'",
+                        }
                     else:
                         if action not in actions:
                             actions.append(action)
@@ -307,6 +478,79 @@ class OpenAIProvider:
         raise OpenAIToolLoopError("OpenAI tool call limit exceeded")
 
 
+def _find_legal_dong_map_request(message: str) -> str | None:
+    if "역" in message:
+        return None
+
+    matched_names = [
+        name for name in BUNDANG_LEGAL_DONG_NAME_VALUES if name in message
+    ]
+    if len(matched_names) != 1:
+        return None
+
+    compact_message = "".join(message.split())
+    map_intent_markers = (
+        "이동",
+        "가줘",
+        "가봐",
+        "가자",
+        "으로가",
+        "로가",
+        "경계",
+        "영역",
+        "선택",
+    )
+    return matched_names[0] if any(
+        marker in compact_message for marker in map_intent_markers
+    ) else None
+
+
+def _find_legal_dong_adjacency_request(
+    message: str,
+    app_state: dict[str, Any] | None,
+) -> str | None:
+    compact_message = "".join(message.split())
+    adjacency_markers = (
+        "옆",
+        "인접",
+        "맞닿",
+        "이웃",
+        "경계를공유",
+    )
+    if not any(marker in compact_message for marker in adjacency_markers):
+        return None
+
+    matched_names = [
+        name for name in BUNDANG_LEGAL_DONG_NAME_VALUES if name in message
+    ]
+    if len(matched_names) == 1:
+        return matched_names[0]
+    if matched_names or not app_state:
+        return None
+
+    for state_key in ("selected_region", "current_legal_dong"):
+        region = app_state.get(state_key)
+        if (
+            isinstance(region, dict)
+            and region.get("name") in BUNDANG_LEGAL_DONG_NAME_VALUES
+        ):
+            return str(region["name"])
+
+    return None
+
+
+def _with_required_region_selection(
+    actions: list[UiAction],
+    region_name: str,
+) -> list[UiAction]:
+    if any(
+        isinstance(action, SelectRegionAction) and action.region_name == region_name
+        for action in actions
+    ):
+        return actions
+    return [*actions, SelectRegionAction(region_name=region_name)]
+
+
 def _parse_ui_action(
     name: str,
     raw_arguments: str,
@@ -316,6 +560,10 @@ def _parse_ui_action(
         arguments = json.loads(raw_arguments)
         if name == "move_map":
             return MoveMapAction(**arguments)
+        if name == "zoom_map":
+            return ZoomMapAction(**arguments)
+        if name == "select_region":
+            return SelectRegionAction(**arguments)
         if name == "fit_bounds":
             action = FitBoundsAction(**arguments)
         elif name == "highlight_properties":
@@ -358,7 +606,7 @@ def _with_default_search_actions(
                     MoveMapAction(
                         lat=float(item["latitude"]),
                         lng=float(item["longitude"]),
-                        zoom=17,
+                        zoom=7,
                     )
                 )
             except (KeyError, TypeError, ValueError, ValidationError):
@@ -384,7 +632,7 @@ def _with_default_station_action(
         move_action = MoveMapAction(
             lat=float(station["latitude"]),
             lng=float(station["longitude"]),
-            zoom=16,
+            zoom=6,
         )
     except (KeyError, TypeError, ValueError, ValidationError):
         return actions

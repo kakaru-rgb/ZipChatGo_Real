@@ -42,16 +42,17 @@ let reverseGeocodeTimer = null;
 let reverseGeocodeRequestSequence = 0;
 const reverseGeocodeCache = new Map();
 let legalDongRegions = [];
+let legalDongRegionByCode = new Map();
+let currentLegalDong = null;
 let selectedLegalDong = null;
-let hoveredLegalDong = null;
-let legalDongTooltipMarker = null;
-let legalDongPolygonClickTime = 0;
+let selectedLegalDongLabelMarker = null;
 
 const INITIAL_CENTER = new naver.maps.LatLng(37.40, 127.15);
 
 const APP_MIN_ZOOM = 10; // 0단계
 const APP_START_ZOOM = 11;   // 처음 화면 1단계
 const APP_MAX_ZOOM = 18; // 8단계
+const AI_MOVE_MIN_ZOOM_STAGE = 6;
 
 const SIGUNGU_STAGE_MAX = 2; // 1~2단계
 const DONG_STAGE_MAX = 4;    // 3~4단계
@@ -150,13 +151,13 @@ window.zipchatgoMapState = Object.freeze({
 });
 
 const propertyDataReady = loadProperties();
+const legalDongDataReady = loadLegalDongBoundaries();
 
 window.zipchatgoMapActions = Object.freeze({
   execute: executeAiMapActions
 });
 
 loadPois();
-loadLegalDongBoundaries();
 
 function getAiAppState() {
   const center = map.getCenter();
@@ -171,7 +172,7 @@ function getAiAppState() {
       lat: center.lat(),
       lng: center.lng()
     },
-    zoom: map.getZoom(),
+    zoom: getAppZoomStage(map.getZoom()),
     current_region: getCurrentMapLocation(center)?.region || null,
     center_address: getCurrentMapLocation(center)?.address || null,
     map_bounds: {
@@ -180,6 +181,7 @@ function getAiAppState() {
       north: northEast.lat(),
       east: northEast.lng()
     },
+    current_legal_dong: toLegalDongAppState(currentLegalDong),
     selected_region: selectedLegalDong ? {
       type: "legal_dong",
       code: selectedLegalDong.code,
@@ -307,9 +309,13 @@ function reportFallbackDataSource(response, dataLabel) {
 }
 
 function bindEvents() {
+  updateMapZoomLevelIndicator();
+  naver.maps.Event.addListener(map, "zoom_changed", updateMapZoomLevelIndicator);
   naver.maps.Event.addListener(map, "idle", () => {
+    updateMapZoomLevelIndicator();
     scheduleRender();
     scheduleReverseGeocode();
+    updateCurrentLegalDong();
     clearSelectedLegalDongWhenOutOfView();
   });
   naver.maps.Event.addListener(map, "dragstart", closeAllInfoPopups);
@@ -373,6 +379,33 @@ function bindEvents() {
   MOBILE_MAP_MEDIA_QUERY.addEventListener("change", syncResponsiveMapLayout);
   window.addEventListener("storage", handleFavoriteStorageChange);
   syncResponsiveMapLayout();
+}
+
+function updateMapZoomLevelIndicator() {
+  const indicator = document.getElementById("mapZoomLevelIndicator");
+  const fill = document.getElementById("mapZoomLevelFill");
+  const marker = document.getElementById("mapZoomLevelMarker");
+  const value = document.getElementById("mapZoomLevelValue");
+  if (!indicator || !fill || !marker || !value || !map) return;
+
+  const mapZoom = Number(map.getZoom());
+  if (!Number.isFinite(mapZoom)) return;
+
+  const zoomStage = getAppZoomStage(mapZoom);
+  const minStage = getAppZoomStage(APP_MIN_ZOOM);
+  const maxStage = getAppZoomStage(APP_MAX_ZOOM);
+  const clampedStage = Math.min(maxStage, Math.max(minStage, zoomStage));
+  const range = maxStage - minStage;
+  const progress = range > 0
+    ? ((clampedStage - minStage) / range) * 100
+    : 100;
+
+  value.value = String(zoomStage);
+  value.textContent = String(zoomStage);
+  fill.style.height = `${progress}%`;
+  marker.style.bottom = `${progress}%`;
+  value.style.bottom = `${progress}%`;
+  indicator.setAttribute("aria-valuenow", String(zoomStage));
 }
 
 function scheduleRender() {
@@ -1096,6 +1129,16 @@ async function loadLegalDongBoundaries() {
     if (!legalDongRegions.length) {
       throw new Error("법정동 경계가 없습니다.");
     }
+
+    legalDongRegionByCode = new Map(
+      legalDongRegions.map(region => [region.code, region])
+    );
+    map.data.addGeoJson({
+      type: "FeatureCollection",
+      features
+    });
+    updateLegalDongStyles();
+    updateCurrentLegalDong();
   } catch (error) {
     console.error("법정동 경계 데이터 로드 실패:", error);
     reportMapDataError("법정동 경계를 불러오지 못했습니다.");
@@ -1118,6 +1161,7 @@ function createLegalDongRegion(feature, index) {
 
   const bounds = getLegalDongCoordinateBounds(polygonCoordinates);
   if (!bounds) return null;
+  const labelPoint = getLegalDongLabelPoint(polygonCoordinates, bounds);
 
   const region = {
     code,
@@ -1125,51 +1169,13 @@ function createLegalDongRegion(feature, index) {
     fullName: `경기도 성남시 분당구 ${name}`,
     color: LEGAL_DONG_COLORS[index % LEGAL_DONG_COLORS.length],
     bounds,
+    labelPoint,
     center: {
       lat: (bounds.south + bounds.north) / 2,
       lng: (bounds.west + bounds.east) / 2
     },
-    polygons: []
+    coordinates: polygonCoordinates
   };
-
-  region.polygons = polygonCoordinates.map(coordinates => {
-    const polygon = new naver.maps.Polygon({
-      map,
-      paths: coordinates.map(ring => (
-        ring.map(([lng, lat]) => new naver.maps.LatLng(lat, lng))
-      )),
-      clickable: true,
-      zIndex: 1,
-      ...getLegalDongStyle(region)
-    });
-
-    naver.maps.Event.addListener(polygon, "mouseover", event => {
-      if (distanceMeasureActive) return;
-      hoveredLegalDong = region;
-      updateLegalDongStyles();
-      showLegalDongTooltip(region, event.coord);
-    });
-    naver.maps.Event.addListener(polygon, "mousemove", event => {
-      if (!distanceMeasureActive && legalDongTooltipMarker && event.coord) {
-        legalDongTooltipMarker.setPosition(event.coord);
-      }
-    });
-    naver.maps.Event.addListener(polygon, "mouseout", () => {
-      if (hoveredLegalDong === region) hoveredLegalDong = null;
-      updateLegalDongStyles();
-      hideLegalDongTooltip();
-    });
-    naver.maps.Event.addListener(polygon, "click", event => {
-      if (distanceMeasureActive) {
-        addDistanceMeasurePoint(event.coord);
-        return;
-      }
-      legalDongPolygonClickTime = Date.now();
-      selectLegalDong(region);
-    });
-
-    return polygon;
-  });
 
   return region;
 }
@@ -1199,30 +1205,113 @@ function getLegalDongCoordinateBounds(polygons) {
     : null;
 }
 
-function getLegalDongStyle(region) {
-  const selected = selectedLegalDong === region;
-  const hovered = hoveredLegalDong === region;
+function getLegalDongLabelPoint(polygons, bounds) {
+  const boundsCenter = {
+    lng: (bounds.west + bounds.east) / 2,
+    lat: (bounds.south + bounds.north) / 2
+  };
+  const centroidCandidates = polygons
+    .map(polygon => getRingCentroid(polygon[0]))
+    .filter(Boolean)
+    .sort((left, right) => right.area - left.area);
+  const candidates = [...centroidCandidates, boundsCenter];
+  const containedCandidate = candidates.find(point => (
+    isPointInsideLegalDong(point.lng, point.lat, polygons)
+  ));
+  if (containedCandidate) {
+    return { lat: containedCandidate.lat, lng: containedCandidate.lng };
+  }
+
+  let bestGridPoint = null;
+  let bestDistance = Infinity;
+  const gridSize = 12;
+  for (let row = 0; row < gridSize; row += 1) {
+    for (let column = 0; column < gridSize; column += 1) {
+      const lat = bounds.south + (bounds.north - bounds.south) * (row + 0.5) / gridSize;
+      const lng = bounds.west + (bounds.east - bounds.west) * (column + 0.5) / gridSize;
+      if (!isPointInsideLegalDong(lng, lat, polygons)) continue;
+
+      const distance = (lat - boundsCenter.lat) ** 2 + (lng - boundsCenter.lng) ** 2;
+      if (distance < bestDistance) {
+        bestGridPoint = { lat, lng };
+        bestDistance = distance;
+      }
+    }
+  }
+
+  return bestGridPoint || boundsCenter;
+}
+
+function getRingCentroid(ring) {
+  if (!Array.isArray(ring) || ring.length < 3) return null;
+
+  const [originLng, originLat] = ring[0];
+  let doubleArea = 0;
+  let lngSum = 0;
+  let latSum = 0;
+  for (let current = 0, previous = ring.length - 1; current < ring.length; previous = current++) {
+    const [currentLng, currentLat] = ring[current];
+    const [previousLng, previousLat] = ring[previous];
+    const currentX = currentLng - originLng;
+    const currentY = currentLat - originLat;
+    const previousX = previousLng - originLng;
+    const previousY = previousLat - originLat;
+    const cross = previousX * currentY - currentX * previousY;
+    doubleArea += cross;
+    lngSum += (previousX + currentX) * cross;
+    latSum += (previousY + currentY) * cross;
+  }
+
+  if (Math.abs(doubleArea) < Number.EPSILON) return null;
+  return {
+    lng: originLng + lngSum / (3 * doubleArea),
+    lat: originLat + latSum / (3 * doubleArea),
+    area: Math.abs(doubleArea / 2)
+  };
+}
+
+function getLegalDongStyle(feature) {
+  const code = String(feature.getProperty("legal_dong_code") || "").trim();
+  const region = legalDongRegionByCode.get(code);
+  const selected = Boolean(region && selectedLegalDong === region);
 
   return {
-    fillColor: region.color,
-    fillOpacity: selected ? 0.34 : hovered ? 0.22 : 0.035,
-    strokeColor: selected ? "#2878c8" : region.color,
-    strokeOpacity: selected ? 0.95 : hovered ? 0.8 : 0.42,
-    strokeWeight: selected ? 3 : hovered ? 2.5 : 1.25
+    visible: selected,
+    clickable: false,
+    fillColor: region?.color || LEGAL_DONG_COLORS[0],
+    fillOpacity: selected ? 0.34 : 0,
+    strokeColor: "#d94f5c",
+    strokeOpacity: selected ? 0.95 : 0,
+    strokeWeight: selected ? 3 : 0,
+    zIndex: 1
   };
 }
 
 function updateLegalDongStyles() {
-  legalDongRegions.forEach(region => {
-    const style = getLegalDongStyle(region);
-    region.polygons.forEach(polygon => polygon.setOptions(style));
-  });
+  map.data.setStyle(getLegalDongStyle);
 }
 
-function selectLegalDong(region) {
+function selectLegalDong(region, { fitBounds = false } = {}) {
   selectedLegalDong = region;
   updateLegalDongStyles();
   updateSelectedLegalDongBadge();
+  updateSelectedLegalDongLabel();
+
+  if (fitBounds) {
+    map.fitBounds(new naver.maps.LatLngBounds(
+      new naver.maps.LatLng(region.bounds.south, region.bounds.west),
+      new naver.maps.LatLng(region.bounds.north, region.bounds.east)
+    ));
+  }
+}
+
+function selectLegalDongByName(regionName) {
+  const normalizedName = String(regionName || "").trim();
+  const region = legalDongRegions.find(item => item.name === normalizedName);
+  if (!region) return false;
+
+  selectLegalDong(region, { fitBounds: true });
+  return true;
 }
 
 function clearSelectedLegalDong() {
@@ -1230,6 +1319,7 @@ function clearSelectedLegalDong() {
   selectedLegalDong = null;
   updateLegalDongStyles();
   updateSelectedLegalDongBadge();
+  updateSelectedLegalDongLabel();
 }
 
 function clearSelectedLegalDongWhenOutOfView() {
@@ -1258,31 +1348,80 @@ function updateSelectedLegalDongBadge() {
   name.textContent = selectedLegalDong?.fullName || "";
 }
 
-function showLegalDongTooltip(region, position) {
-  if (!position) return;
+function updateSelectedLegalDongLabel() {
+  if (!selectedLegalDong) {
+    selectedLegalDongLabelMarker?.setMap(null);
+    return;
+  }
 
-  if (!legalDongTooltipMarker) {
-    legalDongTooltipMarker = new naver.maps.Marker({
-      map,
+  if (!selectedLegalDongLabelMarker) {
+    selectedLegalDongLabelMarker = new naver.maps.Marker({
       clickable: false,
-      zIndex: 1000,
-      icon: {
-        content: '<div class="legal-dong-tooltip"></div>',
-        anchor: new naver.maps.Point(0, 42)
-      }
+      zIndex: 80
     });
   }
 
-  legalDongTooltipMarker.setIcon({
-    content: `<div class="legal-dong-tooltip">${escapeHtml(region.name)}</div>`,
-    anchor: new naver.maps.Point(0, 42)
+  selectedLegalDongLabelMarker.setIcon({
+    content: `<div class="selected-legal-dong-map-label">${escapeHtml(selectedLegalDong.name)}</div>`,
+    anchor: new naver.maps.Point(0, 0)
   });
-  legalDongTooltipMarker.setPosition(position);
-  legalDongTooltipMarker.setMap(map);
+  selectedLegalDongLabelMarker.setPosition(new naver.maps.LatLng(
+    selectedLegalDong.labelPoint.lat,
+    selectedLegalDong.labelPoint.lng
+  ));
+  selectedLegalDongLabelMarker.setMap(map);
 }
 
-function hideLegalDongTooltip() {
-  legalDongTooltipMarker?.setMap(null);
+function updateCurrentLegalDong() {
+  if (!legalDongRegions.length) {
+    currentLegalDong = null;
+    return;
+  }
+
+  const center = map.getCenter();
+  currentLegalDong = legalDongRegions.find(region => (
+    isPointInsideLegalDong(center.lng(), center.lat(), region.coordinates)
+  )) || null;
+}
+
+function isPointInsideLegalDong(lng, lat, polygons) {
+  return polygons.some(polygon => {
+    const [outerRing, ...innerRings] = polygon;
+    return isPointInsideRing(lng, lat, outerRing)
+      && !innerRings.some(ring => isPointInsideRing(lng, lat, ring));
+  });
+}
+
+function isPointInsideRing(lng, lat, ring) {
+  let inside = false;
+
+  for (let current = 0, previous = ring.length - 1; current < ring.length; previous = current++) {
+    const [currentLng, currentLat] = ring[current];
+    const [previousLng, previousLat] = ring[previous];
+    const crossesLatitude = (currentLat > lat) !== (previousLat > lat);
+    if (crossesLatitude) {
+      const intersectionLng = (
+        (previousLng - currentLng) * (lat - currentLat)
+        / (previousLat - currentLat)
+        + currentLng
+      );
+      if (lng < intersectionLng) inside = !inside;
+    }
+  }
+
+  return inside;
+}
+
+function toLegalDongAppState(region) {
+  if (!region) return null;
+  return {
+    type: "legal_dong",
+    code: region.code,
+    name: region.name,
+    full_name: region.fullName,
+    center: region.center,
+    bounds: region.bounds
+  };
 }
 
 function scheduleReverseGeocode() {
@@ -1363,7 +1502,7 @@ function renderPropertyMarkerContent(item, highlighted = false) {
 async function executeAiMapActions(actions) {
   if (!Array.isArray(actions)) return;
 
-  await propertyDataReady;
+  await Promise.all([propertyDataReady, legalDongDataReady]);
 
   actions.forEach(action => {
     if (!action || typeof action.type !== "string") return;
@@ -1371,15 +1510,32 @@ async function executeAiMapActions(actions) {
     if (action.type === "MOVE_MAP") {
       const lat = Number(action.lat);
       const lng = Number(action.lng);
-      const zoom = Number(action.zoom);
+      const zoomStage = Number(action.zoom);
+      const minStage = getAppZoomStage(APP_MIN_ZOOM);
+      const maxStage = getAppZoomStage(APP_MAX_ZOOM);
 
       if (
         Number.isFinite(lat) && lat >= -90 && lat <= 90 &&
         Number.isFinite(lng) && lng >= -180 && lng <= 180 &&
-        Number.isInteger(zoom) && zoom >= APP_MIN_ZOOM && zoom <= APP_MAX_ZOOM
+        Number.isInteger(zoomStage) && zoomStage >= minStage && zoomStage <= maxStage
       ) {
-        moveMapTo(new naver.maps.LatLng(lat, lng), zoom);
+        moveMapTo(
+          new naver.maps.LatLng(lat, lng),
+          getMapZoomFromStage(Math.max(zoomStage, AI_MOVE_MIN_ZOOM_STAGE))
+        );
       }
+      return;
+    }
+
+    if (action.type === "ZOOM_MAP") {
+      const delta = Number(action.delta);
+      if (!Number.isInteger(delta) || ![-3, -2, -1, 1, 2, 3].includes(delta)) return;
+
+      const targetZoom = Math.min(
+        APP_MAX_ZOOM,
+        Math.max(APP_MIN_ZOOM, map.getZoom() + delta)
+      );
+      moveMapTo(map.getCenter(), targetZoom);
       return;
     }
 
@@ -1403,6 +1559,11 @@ async function executeAiMapActions(actions) {
 
       openPropertyDetail(item);
       moveMapTo(new naver.maps.LatLng(item.latitude, item.longitude), APP_MAX_ZOOM);
+      return;
+    }
+
+    if (action.type === "SELECT_REGION") {
+      selectLegalDongByName(action.region_name);
     }
   });
 }
@@ -1893,7 +2054,6 @@ function handleMapClick(event) {
     return;
   }
 
-  if (Date.now() - legalDongPolygonClickTime < 150) return;
   clearSelectedLegalDong();
 }
 
@@ -1906,15 +2066,6 @@ function setMapMarkersInteractive(interactive) {
     marker.setClickable(interactive);
   }
 
-  legalDongRegions.forEach(region => {
-    region.polygons.forEach(polygon => polygon.setOptions({ clickable: interactive }));
-  });
-
-  if (!interactive) {
-    hoveredLegalDong = null;
-    hideLegalDongTooltip();
-    updateLegalDongStyles();
-  }
 }
 
 function addDistanceMeasurePoint(coord) {
@@ -3055,7 +3206,11 @@ function closeAllInfoPopups() {
 =========================== */
 
 function getAppZoomStage(zoom) {
-  return zoom - APP_START_ZOOM + 1;
+  return zoom - APP_MIN_ZOOM;
+}
+
+function getMapZoomFromStage(stage) {
+  return stage + APP_MIN_ZOOM;
 }
 
 function moveMapTo(position, zoom) {
