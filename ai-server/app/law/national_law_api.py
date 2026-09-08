@@ -157,6 +157,11 @@ def _parse_article(unit: ET.Element) -> LawArticle | None:
     text_parts = list(_iter_article_text(unit))
     if not text_parts:
         return None
+    # The API exposes chapter/section headings as article units and gives them
+    # the number of the following article. Only a real article starts with its
+    # displayed article number; hierarchy headings must not become citations.
+    if not text_parts[0].startswith(display_number):
+        return None
     article_key = unit.attrib.get("조문키", "").strip() or (
         f"article-{article_number}-{branch_number or '0'}"
     )

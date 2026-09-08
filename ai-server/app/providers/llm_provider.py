@@ -12,6 +12,7 @@ ToolHandler = Callable[[dict[str, Any]], dict[str, Any]]
 class AgentReply(BaseModel):
     message: str
     actions: list[UiAction] = Field(default_factory=list)
+    rag_used: bool = False
 
 
 class LLMProvider(Protocol):

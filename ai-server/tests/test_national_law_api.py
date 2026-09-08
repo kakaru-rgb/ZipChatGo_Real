@@ -114,3 +114,26 @@ def test_fetch_current_law_filters_articles_for_selected_civil_act_ranges() -> N
     )
 
     assert [article.article_number for article in law.articles] == ["제3조", "제3조의2"]
+
+
+def test_hierarchy_units_are_not_parsed_as_articles() -> None:
+    body = BODY_XML.replace(
+        '<조문단위 조문키="0003001">',
+        '<조문단위 조문키="0003000"><조문번호>3</조문번호>'
+        '<조문내용>제2장 임대차</조문내용></조문단위>'
+        '<조문단위 조문키="0003001">',
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = SEARCH_XML if request.url.path.endswith("lawSearch.do") else body
+        return httpx.Response(200, content=payload.encode("utf-8"), request=request)
+
+    client = httpx.Client(
+        base_url="https://www.law.go.kr/DRF/",
+        transport=httpx.MockTransport(handler),
+    )
+    law = NationalLawApiClient("test-oc", client=client).fetch_current_law(
+        LawTarget("주택임대차보호법", "법률")
+    )
+
+    assert [article.article_key for article in law.articles] == ["0003001", "0003021"]

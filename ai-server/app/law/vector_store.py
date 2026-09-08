@@ -34,6 +34,7 @@ class OpenAIVectorStoreUpdater:
         files: Sequence[GeneratedLawFile],
         store_name: str,
         build_id: str,
+        checkpoint: Callable[[VectorStoreBuild, str], None] | None = None,
     ) -> VectorStoreBuild:
         if not files:
             raise VectorStoreUpdateError("No law documents were generated")
@@ -45,6 +46,8 @@ class OpenAIVectorStoreUpdater:
         store_id = str(vector_store.id)
         uploaded_file_ids: list[str] = []
         self._progress(f"Created OpenAI Vector Store: {store_id}")
+        if checkpoint:
+            checkpoint(VectorStoreBuild(store_id, ()), "uploading")
 
         try:
             for index, generated in enumerate(files, start=1):
@@ -67,6 +70,13 @@ class OpenAIVectorStoreUpdater:
                         },
                     },
                 )
+                if checkpoint and (
+                    index == 1 or index % 25 == 0 or index == len(files)
+                ):
+                    checkpoint(
+                        VectorStoreBuild(store_id, tuple(uploaded_file_ids)),
+                        "uploading",
+                    )
                 if index == 1 or index % 25 == 0 or index == len(files):
                     self._progress(f"Attached law articles: {index}/{len(files)}")
 
@@ -77,7 +87,95 @@ class OpenAIVectorStoreUpdater:
                 f"Failed to upload or index the new law Vector Store: {exception}"
             ) from _BuildFailure(exception, build)
 
-        return VectorStoreBuild(store_id, tuple(uploaded_file_ids))
+        build = VectorStoreBuild(store_id, tuple(uploaded_file_ids))
+        if checkpoint:
+            checkpoint(build, "indexed")
+        return build
+
+    def resume(
+        self,
+        files: Sequence[GeneratedLawFile],
+        store_id: str,
+        checkpoint: Callable[[VectorStoreBuild, str], None] | None = None,
+    ) -> VectorStoreBuild:
+        attached = self._list_attached_files(store_id)
+        uploaded_file_ids = [str(item.id) for item in attached]
+        attached_keys = {
+            str((getattr(item, "attributes", None) or {}).get("article_key", ""))
+            + ":"
+            + str((getattr(item, "attributes", None) or {}).get("law_id", ""))
+            for item in attached
+        }
+        pending = [
+            generated
+            for generated in files
+            if _document_key(generated) not in attached_keys
+        ]
+        self._progress(
+            f"Resuming OpenAI Vector Store: attached={len(attached)}, "
+            f"pending={len(pending)}"
+        )
+
+        try:
+            for index, generated in enumerate(pending, start=1):
+                with generated.path.open("rb") as stream:
+                    uploaded = self._client.files.create(
+                        file=stream,
+                        purpose="assistants",
+                    )
+                file_id = str(uploaded.id)
+                uploaded_file_ids.append(file_id)
+                self._client.vector_stores.files.create(
+                    vector_store_id=store_id,
+                    file_id=file_id,
+                    attributes=_clean_attributes(generated.attributes),
+                    chunking_strategy={
+                        "type": "static",
+                        "static": {
+                            "max_chunk_size_tokens": 1200,
+                            "chunk_overlap_tokens": 200,
+                        },
+                    },
+                )
+                if checkpoint and (
+                    index == 1 or index % 25 == 0 or index == len(pending)
+                ):
+                    checkpoint(
+                        VectorStoreBuild(store_id, tuple(uploaded_file_ids)),
+                        "uploading",
+                    )
+                if index == 1 or index % 25 == 0 or index == len(pending):
+                    self._progress(
+                        f"Attached remaining law articles: {index}/{len(pending)}"
+                    )
+            self._wait_until_indexed(store_id, len(files))
+        except Exception as exception:
+            build = VectorStoreBuild(store_id, tuple(uploaded_file_ids))
+            raise VectorStoreUpdateError(
+                f"Failed to resume the law Vector Store: {exception}"
+            ) from _BuildFailure(exception, build)
+
+        build = VectorStoreBuild(store_id, tuple(uploaded_file_ids))
+        if checkpoint:
+            checkpoint(build, "indexed")
+        return build
+
+    def _list_attached_files(self, store_id: str) -> list[Any]:
+        attached: list[Any] = []
+        after: str | None = None
+        while True:
+            kwargs: dict[str, Any] = {
+                "vector_store_id": store_id,
+                "limit": 100,
+                "order": "asc",
+            }
+            if after:
+                kwargs["after"] = after
+            page = self._client.vector_stores.files.list(**kwargs)
+            attached.extend(page.data)
+            if not bool(getattr(page, "has_more", False)):
+                return attached
+            after = str(page.last_id)
 
     def cleanup(self, build: VectorStoreBuild) -> None:
         try:
@@ -132,3 +230,11 @@ def _clean_attributes(attributes: dict[str, str]) -> dict[str, str]:
         for key, value in attributes.items()
         if str(value).strip()
     }
+
+
+def _document_key(generated: GeneratedLawFile) -> str:
+    return (
+        str(generated.attributes.get("article_key", ""))
+        + ":"
+        + str(generated.attributes.get("law_id", ""))
+    )

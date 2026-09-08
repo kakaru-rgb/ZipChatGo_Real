@@ -12,10 +12,14 @@ if str(AI_SERVER_ROOT) not in sys.path:
     sys.path.insert(0, str(AI_SERVER_ROOT))
 
 from dotenv import set_key
-from openai import OpenAI
+from openai import NotFoundError, OpenAI
 
 from app.config import get_law_api_oc, get_openai_api_key
-from app.law.documents import add_vector_store_to_manifest, write_law_corpus
+from app.law.documents import (
+    add_vector_store_to_manifest,
+    load_law_corpus,
+    write_law_corpus,
+)
 from app.law.national_law_api import NationalLawApiClient, NationalLawApiError
 from app.law.targets import LAW_TARGETS
 from app.law.vector_store import (
@@ -24,11 +28,6 @@ from app.law.vector_store import (
     VectorStoreUpdateError,
     get_failed_build,
 )
-from app.retrievers.openai_vector_store_law_retriever import (
-    OpenAIVectorStoreLawRetriever,
-)
-
-
 SMOKE_QUERIES = (
     ("전입신고 대항력 발생 시점", "주택임대차보호법", "제3조"),
     ("공인중개사 중개대상물 확인 설명 의무", "공인중개사법", "제25조"),
@@ -50,6 +49,14 @@ def parse_args() -> argparse.Namespace:
             "Collect current real-estate laws from the National Law Information "
             "Open API and rebuild an OpenAI Vector Store."
         )
+    )
+    parser.add_argument(
+        "--resume-build",
+        type=Path,
+        help=(
+            "Reuse an existing local build directory and skip National Law API "
+            "collection. A checkpointed partial Store is resumed when present."
+        ),
     )
     parser.add_argument(
         "--collect-only",
@@ -77,27 +84,36 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    law_api_oc = get_law_api_oc()
-    if not law_api_oc:
-        print("ERROR: LAW_API_OC is not configured in the project .env.", file=sys.stderr)
-        return 2
+    if args.resume_build:
+        try:
+            corpus = load_law_corpus(args.resume_build.resolve())
+        except (ValueError, KeyError, OSError) as exception:
+            print(f"ERROR: Could not load existing build: {exception}", file=sys.stderr)
+            return 1
+        build_id = corpus.build_id
+        print(f"Reusing {len(corpus.files)} article documents: {corpus.build_dir}")
+    else:
+        law_api_oc = get_law_api_oc()
+        if not law_api_oc:
+            print("ERROR: LAW_API_OC is not configured in the project .env.", file=sys.stderr)
+            return 2
 
-    build_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-    try:
-        law_client = NationalLawApiClient(law_api_oc)
-        laws = []
-        for index, target in enumerate(LAW_TARGETS, start=1):
-            print(f"Collecting {index}/{len(LAW_TARGETS)}: {target.name}")
-            law = law_client.fetch_current_law(target)
-            laws.append(law)
-            print(
-                f"  -> {law.law_type}, effective {law.effective_date}, "
-                f"articles {len(law.articles)}"
-            )
-        corpus = write_law_corpus(laws, args.output_root, build_id=build_id)
-    except (NationalLawApiError, FileExistsError, OSError) as exception:
-        print(f"ERROR: {exception}", file=sys.stderr)
-        return 1
+        build_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        try:
+            law_client = NationalLawApiClient(law_api_oc)
+            laws = []
+            for index, target in enumerate(LAW_TARGETS, start=1):
+                print(f"Collecting {index}/{len(LAW_TARGETS)}: {target.name}")
+                law = law_client.fetch_current_law(target)
+                laws.append(law)
+                print(
+                    f"  -> {law.law_type}, effective {law.effective_date}, "
+                    f"articles {len(law.articles)}"
+                )
+            corpus = write_law_corpus(laws, args.output_root, build_id=build_id)
+        except (NationalLawApiError, FileExistsError, OSError) as exception:
+            print(f"ERROR: {exception}", file=sys.stderr)
+            return 1
 
     print(f"Generated {len(corpus.files)} article documents: {corpus.build_dir}")
     if args.collect_only:
@@ -113,27 +129,61 @@ def main() -> int:
     updater = OpenAIVectorStoreUpdater(client, progress=print)
     build: VectorStoreBuild | None = None
     store_name = f"zipchatgo-law-rag-{build_id}"
-    try:
-        build = updater.rebuild(
-            corpus.files,
-            store_name=store_name,
-            build_id=build_id,
+
+    def checkpoint(current: VectorStoreBuild, status: str) -> None:
+        add_vector_store_to_manifest(
+            corpus,
+            current.vector_store_id,
+            list(current.openai_file_ids),
+            status=status,
         )
+
+    try:
+        manifest = __import__("json").loads(
+            corpus.manifest_path.read_text(encoding="utf-8")
+        )
+        checkpointed_store = manifest.get("openai_vector_store") or {}
+        checkpointed_store_id = str(checkpointed_store.get("id", "")).strip()
+        if checkpointed_store_id:
+            try:
+                client.vector_stores.retrieve(checkpointed_store_id)
+            except NotFoundError:
+                print(
+                    "Checkpointed Vector Store no longer exists; creating a new one."
+                )
+                checkpointed_store_id = ""
+        if checkpointed_store_id and checkpointed_store.get("status") != "completed":
+            build = updater.resume(
+                corpus.files,
+                checkpointed_store_id,
+                checkpoint=checkpoint,
+            )
+        else:
+            build = updater.rebuild(
+                corpus.files,
+                store_name=store_name,
+                build_id=build_id,
+                checkpoint=checkpoint,
+            )
         _validate_search(client, build.vector_store_id)
+        store = client.vector_stores.retrieve(build.vector_store_id)
+        counts = store.file_counts.model_dump()
         add_vector_store_to_manifest(
             corpus,
             build.vector_store_id,
             list(build.openai_file_ids),
+            status="completed",
+            file_counts={key: int(value) for key, value in counts.items()},
         )
     except VectorStoreUpdateError as exception:
         failed_build = get_failed_build(exception)
-        if failed_build and not args.keep_failed_resources:
-            updater.cleanup(failed_build)
+        if failed_build:
+            checkpoint(failed_build, "upload_failed")
         print(f"ERROR: {exception}", file=sys.stderr)
         return 1
     except Exception as exception:
-        if build and not args.keep_failed_resources:
-            updater.cleanup(build)
+        if build:
+            checkpoint(build, "validation_failed")
         print(f"ERROR: Vector Store validation failed: {exception}", file=sys.stderr)
         return 1
 
@@ -150,16 +200,28 @@ def main() -> int:
 
 
 def _validate_search(client: OpenAI, vector_store_id: str) -> None:
-    retriever = OpenAIVectorStoreLawRetriever(
-        api_key="validation-uses-injected-client",
-        vector_store_id=vector_store_id,
-        client=client,
-        max_results=10,
-    )
     for query, expected_law_name, expected_article_number in SMOKE_QUERIES:
-        response = retriever.search(query)
+        page = client.vector_stores.search(
+            vector_store_id=vector_store_id,
+            query=f"{expected_article_number} {query}",
+            filters={
+                "type": "eq",
+                "key": "law_name",
+                "value": expected_law_name,
+            },
+            max_num_results=10,
+            rewrite_query=False,
+        )
         matched_citations = {
-            (result.law_name, result.article_number) for result in response.results
+            (
+                str((getattr(result, "attributes", None) or {}).get("law_name", "")),
+                str(
+                    (getattr(result, "attributes", None) or {}).get(
+                        "article_number", ""
+                    )
+                ),
+            )
+            for result in page.data
         }
         if (expected_law_name, expected_article_number) not in matched_citations:
             raise RuntimeError(

@@ -440,7 +440,11 @@ class OpenAIProvider:
                         message_text,
                         law_search_results,
                     )
-                return AgentReply(message=message_text, actions=actions)
+                return AgentReply(
+                    message=message_text,
+                    actions=actions,
+                    rag_used=law_search_attempted,
+                )
 
             running_input.extend(response.output)
             for function_call in function_calls:

@@ -1,4 +1,6 @@
 import json
+import re
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,6 +20,54 @@ class GeneratedLawCorpus:
     build_dir: Path
     manifest_path: Path
     files: tuple[GeneratedLawFile, ...]
+
+
+def load_law_corpus(build_dir: Path) -> GeneratedLawCorpus:
+    """Load an already collected corpus without calling the law API again.
+
+    Older builds may contain National Law API hierarchy units (chapter/section
+    headings) that were previously counted as articles. They remain untouched
+    on disk for auditability, but are excluded from the upload list and are
+    recorded separately in the manifest.
+    """
+    manifest_path = build_dir / "manifest.json"
+    documents_dir = build_dir / "documents"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    laws_by_id = {str(law["law_id"]): law for law in manifest["laws"]}
+
+    files: list[GeneratedLawFile] = []
+    article_counts: Counter[str] = Counter()
+    ignored_local_structure_files = 0
+    for path in sorted(documents_dir.glob("*.md")):
+        generated = _load_article(path, laws_by_id)
+        if generated is None:
+            ignored_local_structure_files += 1
+            continue
+        files.append(generated)
+        article_counts[generated.attributes["law_id"]] += 1
+
+    source_unit_count = int(
+        manifest.get("source_unit_count", manifest.get("article_file_count", 0))
+    )
+    manifest["source_unit_count"] = source_unit_count
+    manifest["document_file_count"] = len(list(documents_dir.glob("*.md")))
+    manifest["article_file_count"] = len(files)
+    manifest["ignored_structure_unit_count"] = source_unit_count - len(files)
+    manifest["ignored_local_structure_file_count"] = ignored_local_structure_files
+    for law in manifest["laws"]:
+        law.setdefault("source_unit_count", law.get("article_count", 0))
+        law["article_count"] = article_counts[str(law["law_id"])]
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    return GeneratedLawCorpus(
+        build_id=str(manifest["build_id"]),
+        build_dir=build_dir,
+        manifest_path=manifest_path,
+        files=tuple(files),
+    )
 
 
 def write_law_corpus(
@@ -80,13 +130,19 @@ def add_vector_store_to_manifest(
     corpus: GeneratedLawCorpus,
     vector_store_id: str,
     openai_file_ids: list[str],
+    *,
+    status: str = "completed",
+    file_counts: dict[str, int] | None = None,
 ) -> None:
     manifest = json.loads(corpus.manifest_path.read_text(encoding="utf-8"))
     manifest["openai_vector_store"] = {
         "id": vector_store_id,
         "file_count": len(openai_file_ids),
         "file_ids": openai_file_ids,
+        "status": status,
     }
+    if file_counts is not None:
+        manifest["openai_vector_store"]["file_counts"] = file_counts
     corpus.manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -117,6 +173,7 @@ def _write_article(
         "promulgation_number": law.promulgation_number or "",
         "revision_type": law.revision_type or "",
         "source_url": law.source_url,
+        "article_key": article.article_key,
     }
     body = "\n".join(
         [
@@ -138,3 +195,58 @@ def _write_article(
     )
     path.write_text(body, encoding="utf-8")
     return GeneratedLawFile(path=path, attributes=metadata)
+
+
+def _load_article(
+    path: Path,
+    laws_by_id: dict[str, dict[str, object]],
+) -> GeneratedLawFile | None:
+    law_id, _, article_key = path.stem.partition("_")
+    law = laws_by_id.get(law_id)
+    if law is None or not article_key:
+        raise ValueError(f"Document filename does not match manifest: {path.name}")
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    heading_index = next(
+        (index for index, line in enumerate(lines) if line.startswith("## ")),
+        None,
+    )
+    if heading_index is None:
+        raise ValueError(f"Document has no article heading: {path.name}")
+    heading = lines[heading_index][3:].strip()
+    match = re.match(r"^(제\d+조(?:의\d+)?)(?:\((.*)\))?$", heading)
+    if match is None:
+        raise ValueError(f"Document has an invalid article heading: {path.name}")
+    article_number, article_title = match.groups()
+    first_body_line = next(
+        (
+            line.strip()
+            for line in lines[heading_index + 1 :]
+            if line.strip() and line.strip() != "---"
+        ),
+        "",
+    )
+    if not first_body_line.startswith(article_number):
+        return None
+
+    metadata_lines = {
+        key.strip(): value.strip()
+        for line in lines[:heading_index]
+        if line.startswith("- ") and ":" in line
+        for key, value in [line[2:].split(":", 1)]
+    }
+    attributes = {
+        "law_name": str(law["law_name"]),
+        "law_type": str(law["law_type"]),
+        "law_id": law_id,
+        "law_serial_number": str(law["law_serial_number"]),
+        "article_number": article_number,
+        "article_title": article_title or "",
+        "effective_date": metadata_lines.get("시행일", ""),
+        "promulgation_date": str(law.get("promulgation_date") or ""),
+        "promulgation_number": str(law.get("promulgation_number") or ""),
+        "revision_type": str(law.get("revision_type") or ""),
+        "source_url": str(law["source_url"]),
+        "article_key": article_key,
+    }
+    return GeneratedLawFile(path=path, attributes=attributes)
