@@ -4,3 +4,5 @@ pytest==8.4.1
 httpx==0.28.1
 openai==1.107.2
 python-dotenv==1.2.3
+pymupdf==1.28.2
+kiwipiepy==0.23.2

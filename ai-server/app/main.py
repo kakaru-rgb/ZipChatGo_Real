@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi import Depends, FastAPI, HTTPException, status
 from openai import APIError
 
 from app.config import (
@@ -90,7 +90,6 @@ def get_real_estate_law_search_tool() -> RealEstateLawSearchTool:
 @app.post("/agent/chat", response_model=ChatResponse)
 def agent_chat(
     request: ChatRequest,
-    response: Response,
     provider: LLMProvider = Depends(get_openai_provider),
     property_search: PropertySearchTool = Depends(get_property_search_tool),
     transit_station: TransitStationTool = Depends(get_transit_station_tool),
@@ -110,9 +109,6 @@ def agent_chat(
             find_transit_station=transit_station.search,
             get_adjacent_legal_dongs=legal_dong_adjacency.lookup,
             search_real_estate_law=real_estate_law_search.search,
-        )
-        response.headers["X-ZipChatGo-RAG-Used"] = (
-            "true" if result.rag_used else "false"
         )
         return ChatResponse(message=result.message, actions=result.actions)
     except APIError as exception:

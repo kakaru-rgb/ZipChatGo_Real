@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import os
+import re
 import sys
 from pathlib import Path
 
@@ -12,15 +12,24 @@ if str(AI_SERVER_ROOT) not in sys.path:
 
 from openai import OpenAI
 
-from app.config import get_openai_api_key, get_openai_model
-from app.evaluation.realtor_exam import (
-    ChatbotExamEvaluator,
-    OpenAIExamPdfExtractor,
-    evaluate_exam,
-    load_prepared_exam,
-    prepare_exam,
-    save_prepared_exam,
+from app.config import (
+    get_law_vector_store_id,
+    get_openai_api_key,
+    get_openai_exam_evaluation_model,
 )
+from app.evaluation.realtor_exam import (
+    evaluate_exam,
+)
+from app.evaluation.local_exam_pdf import (
+    load_exam_source_csv,
+    prepare_exam_locally,
+    save_exam_source_csv,
+)
+from app.evaluation.realtor_exam_agent import RealtorExamEvaluator
+from app.retrievers.openai_vector_store_law_retriever import (
+    OpenAIVectorStoreLawRetriever,
+)
+from app.tools.real_estate_law import RealEstateLawSearchTool
 
 
 def parse_args() -> argparse.Namespace:
@@ -32,21 +41,21 @@ def parse_args() -> argparse.Namespace:
         "--phase",
         choices=("prepare", "evaluate", "all"),
         required=True,
-        help="prepare extracts PDFs; evaluate calls the local chatbot; all runs both.",
+        help=(
+            "prepare builds the dataset; evaluate runs the isolated exam agent; "
+            "all runs both."
+        ),
     )
     parser.add_argument(
         "--source-root",
         type=Path,
         required=True,
-        help="Folder containing the selected year's PDFs and final-answer PDF.",
+        help="Folder containing the selected year's original question PDFs.",
     )
     parser.add_argument(
-        "--extract-model",
-        default=os.getenv("OPENAI_EXAM_EXTRACTION_MODEL", get_openai_model()),
-    )
-    parser.add_argument(
-        "--ai-base-url",
-        default="http://127.0.0.1:8000",
+        "--evaluation-model",
+        default=get_openai_exam_evaluation_model(),
+        help="Exam-only model. It does not change the production chatbot model.",
     )
     parser.add_argument(
         "--limit",
@@ -56,8 +65,16 @@ def parse_args() -> argparse.Namespace:
             "replace the partial dataset while evaluation resumes from the saved CSV."
         ),
     )
+    parser.add_argument(
+        "--subject",
+        help="Evaluate only questions whose subject exactly matches this value.",
+    )
     parser.add_argument("--delay", type=float, default=1.0)
     parser.add_argument("--no-resume", action="store_true")
+    parser.add_argument(
+        "--run-label",
+        help="Optional label appended to the evaluation CSV filename.",
+    )
     return parser.parse_args()
 
 
@@ -68,27 +85,30 @@ def main() -> int:
         print(f"ERROR: Exam source directory not found: {source_root}", file=sys.stderr)
         return 2
 
-    prepared_path = source_root / f"공인중개사_평가데이터_{args.year}.json"
-    output_path = source_root / f"공인중개사_챗봇_평가_{args.year}.csv"
+    prepared_path = source_root / f"공인중개사_문항_{args.year}.csv"
+    model_label = re.sub(r"[^A-Za-z0-9._-]", "_", args.evaluation_model)
+    run_label = ""
+    if args.run_label:
+        safe_run_label = re.sub(r"[^A-Za-z0-9가-힣._-]", "_", args.run_label)
+        run_label = f"_{safe_run_label}"
+    output_path = source_root / (
+        f"공인중개사_시험평가_{args.year}_{model_label}{run_label}.csv"
+    )
 
     if args.phase in {"prepare", "all"}:
-        api_key = get_openai_api_key()
-        if not api_key:
-            print("ERROR: OPENAI_API_KEY is not configured.", file=sys.stderr)
+        if args.limit is not None:
+            print(
+                "ERROR: --limit is only supported during evaluation; "
+                "local PDF preparation always validates the complete paper.",
+                file=sys.stderr,
+            )
             return 2
-        extractor = OpenAIExamPdfExtractor(
-            OpenAI(api_key=api_key),
-            model=args.extract_model,
-            progress=print,
+        exam = prepare_exam_locally(args.year, source_root)
+        save_exam_source_csv(exam, prepared_path)
+        print(
+            f"Prepared {len(exam.questions)} questions locally without an LLM: "
+            f"{prepared_path}"
         )
-        exam = prepare_exam(
-            args.year,
-            source_root,
-            extractor,
-            limit=args.limit,
-        )
-        save_prepared_exam(exam, prepared_path)
-        print(f"Prepared {len(exam.questions)} questions: {prepared_path}")
 
     if args.phase in {"evaluate", "all"}:
         if not prepared_path.exists():
@@ -98,13 +118,37 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
-        exam = load_prepared_exam(prepared_path)
-        evaluator = ChatbotExamEvaluator(args.ai_base_url)
+        api_key = get_openai_api_key()
+        if not api_key:
+            print("ERROR: OPENAI_API_KEY is not configured.", file=sys.stderr)
+            return 2
+        exam = load_exam_source_csv(prepared_path)
+        client = OpenAI(api_key=api_key)
+        vector_store_id = get_law_vector_store_id()
+        law_search = None
+        if vector_store_id:
+            retriever = OpenAIVectorStoreLawRetriever(
+                api_key,
+                vector_store_id,
+                client=client,
+            )
+            law_search = RealEstateLawSearchTool(retriever).search
+        else:
+            print(
+                "WARNING: LAW_VECTOR_STORE_ID is not configured; "
+                "exam-only RAG is disabled."
+            )
+        evaluator = RealtorExamEvaluator(
+            client,
+            model=args.evaluation_model,
+            law_search=law_search,
+        )
         rows = evaluate_exam(
             exam,
             evaluator,
             output_path,
             resume=not args.no_resume,
+            subject=args.subject,
             limit=args.limit,
             delay_seconds=args.delay,
             progress=print,

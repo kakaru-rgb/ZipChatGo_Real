@@ -24,6 +24,13 @@ def get_openai_model() -> str:
     return os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
 
 
+def get_openai_exam_evaluation_model() -> str:
+    return (
+        os.getenv("OPENAI_EXAM_EVALUATION_MODEL", "gpt-4o-mini").strip()
+        or "gpt-4o-mini"
+    )
+
+
 def get_spring_server_base_url() -> str:
     return (
         os.getenv("SPRING_SERVER_BASE_URL", "http://127.0.0.1:8080").strip()
