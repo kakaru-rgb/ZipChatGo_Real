@@ -76,3 +76,31 @@ def test_search_filters_weak_results_relative_to_best_match() -> None:
 
     assert result.total_count == 1
     assert result.results[0].article_number == "제3조"
+
+
+def test_search_applies_or_filter_for_law_family_names() -> None:
+    client = Mock()
+    client.vector_stores.search.return_value = SimpleNamespace(data=[])
+    retriever = OpenAIVectorStoreLawRetriever(
+        "test-key",
+        "vs-law",
+        client=client,
+    )
+
+    retriever.search(
+        "계약갱신요구권",
+        law_names=["주택임대차보호법", "주택임대차보호법 시행령"],
+    )
+
+    options = client.vector_stores.search.call_args.kwargs
+    assert options["filters"] == {
+        "type": "or",
+        "filters": [
+            {"type": "eq", "key": "law_name", "value": "주택임대차보호법"},
+            {
+                "type": "eq",
+                "key": "law_name",
+                "value": "주택임대차보호법 시행령",
+            },
+        ],
+    }

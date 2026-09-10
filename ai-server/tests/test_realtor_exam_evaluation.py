@@ -53,6 +53,7 @@ def _answer_response(answer: int = 3, resolved_items=None, choice_judgments=None
             "choice_number": number,
             "judgment": "참" if number == answer else "거짓",
             "basis": f"선택지 {number} 검토",
+            "evidence_ids": [],
         }
         for number in range(1, 6)
     ]
@@ -123,19 +124,14 @@ def test_exam_evaluator_uses_structured_answer_without_production_endpoint() -> 
 
 
 def test_exam_evaluator_records_exam_only_rag_trace() -> None:
-    function_call = SimpleNamespace(
-        type="function_call",
-        name="search_real_estate_law",
-        arguments=json.dumps({"query": "민법 계약금 해제"}),
-        call_id="call_exam_law",
-    )
-    client = _client(
-        SimpleNamespace(output=[function_call], output_text=""),
-        _answer_response(),
-    )
+    client = _client(_answer_response())
 
     class Retriever:
-        def search(self, query: str) -> LawSearchResponse:
+        def __init__(self) -> None:
+            self.law_names = []
+
+        def search(self, query: str, *, law_names=()) -> LawSearchResponse:
+            self.law_names.append(list(law_names))
             return LawSearchResponse(
                 query=query,
                 total_count=1,
@@ -152,24 +148,58 @@ def test_exam_evaluator_records_exam_only_rag_trace() -> None:
                 ],
             )
 
+    retriever = Retriever()
     row = RealtorExamEvaluator(
         client,
         model="gpt-4o-mini",
-        law_search=RealEstateLawSearchTool(Retriever()).search,
+        law_search=RealEstateLawSearchTool(retriever).search,
     ).evaluate(_question())
 
     assert row["RAG사용여부"] == "Y"
-    assert row["RAG검색어"] == "민법 계약금 해제"
+    assert len(row["RAG검색어"].split(" | ")) == 5
     assert row["RAG검색결과수"] == "1"
     assert "제565조" in row["RAG검색근거"]
-    assert len(client.responses.calls) == 2
+    assert row["법령명필터"] == "민법"
+    assert len(retriever.law_names) == 5
+    assert all(names == ["민법"] for names in retriever.law_names)
+    assert len(client.responses.calls) == 1
     assert client.responses.calls[0]["tools"] == [SEARCH_REAL_ESTATE_LAW_TOOL]
-    assert client.responses.calls[0]["tool_choice"] == {
-        "type": "function",
-        "name": "search_real_estate_law",
-    }
-    tool_output = client.responses.calls[1]["input"][-1]["output"]
-    assert "grounding_notice" in tool_output
+    assert client.responses.calls[0]["tool_choice"] == "none"
+    assert "E1" in client.responses.calls[0]["input"][0]["content"]
+    assert client.responses.calls[0]["temperature"] == 0
+
+
+def test_exam_evaluator_limits_and_deduplicates_prefetched_evidence() -> None:
+    client = _client(_answer_response())
+    call_count = 0
+
+    def law_search(_arguments):
+        nonlocal call_count
+        call_count += 1
+        return {
+            "results": [
+                {
+                    "rank": rank,
+                    "score": 0.95 - rank / 100,
+                    "law_name": "민법",
+                    "article_number": f"제{call_count * 10 + rank}조",
+                    "text": f"근거 {call_count}-{rank}",
+                }
+                for rank in range(1, 6)
+            ]
+        }
+
+    row = RealtorExamEvaluator(
+        client,
+        model="gpt-4o-mini",
+        law_search=law_search,
+    ).evaluate(_question())
+
+    payload = json.loads(row["선택지별검색근거"])[0]
+    assert call_count == 5
+    assert row["RAG검색결과수"] == "8"
+    assert len(payload["evidence"]) == 8
+    assert all(target["evidence_ids"] for target in payload["search_targets"])
 
 
 def test_model_decides_not_to_call_rag_for_general_theory() -> None:
@@ -213,7 +243,7 @@ def test_exam_evaluator_stops_repeated_law_searches_and_requests_answer() -> Non
         client,
         model="gpt-4o-mini",
         law_search=lambda _arguments: {"results": []},
-    ).evaluate(_question(subject="공인중개사법령 및 중개실무"))
+    ).evaluate(_question(subject="부동산학개론"))
 
     assert row["오류"] == ""
     assert row["RAG검색어"] == "법령 검색 1 | 법령 검색 2 | 법령 검색 3"
@@ -306,6 +336,31 @@ def test_false_label_set_is_used_when_question_asks_for_incorrect_items() -> Non
 
     assert row["챗봇예측"] == "3"
     assert row["조합검증결과"] == "번호보정:1->3"
+
+
+def test_direct_negative_question_selects_the_only_false_choice() -> None:
+    question = _question(subject="공인중개사법령 및 중개실무").model_copy(
+        update={
+            "question_no": 2,
+            "question": "법인이 중개업과 함께 할 수 없는 업무는?",
+            "correct_answer": 1,
+        }
+    )
+    judgments = [
+        {
+            "choice_number": number,
+            "judgment": "거짓" if number == 1 else "참",
+            "basis": f"선택지 {number} 검토",
+            "evidence_ids": [],
+        }
+        for number in range(1, 6)
+    ]
+    client = _client(_answer_response(5, choice_judgments=judgments))
+
+    row = RealtorExamEvaluator(client, model="gpt-4o-mini").evaluate(question)
+
+    assert row["챗봇예측"] == "1"
+    assert row["조합검증결과"] == "번호보정:5->1"
 
 
 def test_result_csv_is_excel_friendly_utf8(tmp_path) -> None:

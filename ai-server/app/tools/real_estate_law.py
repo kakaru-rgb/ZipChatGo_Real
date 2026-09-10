@@ -21,7 +21,16 @@ class RealEstateLawSearchTool:
             raise RealEstateLawSearchToolError(
                 "Invalid search_real_estate_law arguments"
             ) from exception
-        result = self._retriever.search(arguments.query).model_dump(exclude_none=True)
+        if arguments.law_names:
+            response = self._retriever.search(
+                arguments.query,
+                law_names=arguments.law_names,
+            )
+        else:
+            response = self._retriever.search(arguments.query)
+        result = response.model_dump(exclude_none=True)
+        if arguments.law_names:
+            result["applied_law_names"] = arguments.law_names
         result["result_order"] = "relevance_descending"
         result["grounding_notice"] = (
             "rank 1을 우선 검토하고 법령명·조문 번호·시행일을 결과 그대로 인용하세요. "

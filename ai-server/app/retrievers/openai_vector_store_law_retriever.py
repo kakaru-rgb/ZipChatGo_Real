@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Any
 
 from openai import APIError, OpenAI
@@ -33,18 +34,28 @@ class OpenAIVectorStoreLawRetriever:
         self._relative_score_ratio = relative_score_ratio
         self._rewrite_query = rewrite_query
 
-    def search(self, query: str) -> LawSearchResponse:
+    def search(
+        self,
+        query: str,
+        *,
+        law_names: Sequence[str] = (),
+    ) -> LawSearchResponse:
         normalized_query = query.strip()
         if not normalized_query:
             raise LawRetrievalError("Law search query must not be blank")
 
+        search_options: dict[str, Any] = {
+            "vector_store_id": self._vector_store_id,
+            "query": normalized_query,
+            "max_num_results": self._max_results,
+            "rewrite_query": self._rewrite_query,
+        }
+        law_filter = _law_name_filter(law_names)
+        if law_filter is not None:
+            search_options["filters"] = law_filter
+
         try:
-            page = self._client.vector_stores.search(
-                vector_store_id=self._vector_store_id,
-                query=normalized_query,
-                max_num_results=self._max_results,
-                rewrite_query=self._rewrite_query,
-            )
+            page = self._client.vector_stores.search(**search_options)
         except APIError as exception:
             raise LawRetrievalError("OpenAI Vector Store search failed") from exception
 
@@ -114,3 +125,16 @@ def _filter_relevant_results(
     best_score = max(item.score for item in candidates)
     cutoff = max(minimum_score, best_score * relative_score_ratio)
     return [item for item in candidates if item.score >= cutoff]
+
+
+def _law_name_filter(law_names: Sequence[str]) -> dict[str, Any] | None:
+    normalized = list(dict.fromkeys(name.strip() for name in law_names if name.strip()))
+    comparisons = [
+        {"type": "eq", "key": "law_name", "value": name}
+        for name in normalized
+    ]
+    if not comparisons:
+        return None
+    if len(comparisons) == 1:
+        return comparisons[0]
+    return {"type": "or", "filters": comparisons}

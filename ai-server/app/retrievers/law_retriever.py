@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Protocol
 
 from pydantic import BaseModel, Field
@@ -34,14 +35,24 @@ class LawSearchResponse(BaseModel):
 
 
 class LawRetriever(Protocol):
-    def search(self, query: str) -> LawSearchResponse: ...
+    def search(
+        self,
+        query: str,
+        *,
+        law_names: Sequence[str] = (),
+    ) -> LawSearchResponse: ...
 
 
 class UnavailableLawRetriever:
     def __init__(self, missing_variable: str) -> None:
         self._missing_variable = missing_variable
 
-    def search(self, query: str) -> LawSearchResponse:
+    def search(
+        self,
+        query: str,
+        *,
+        law_names: Sequence[str] = (),
+    ) -> LawSearchResponse:
         raise LawRetrieverConfigurationError(
             f"{self._missing_variable} is not configured"
         )

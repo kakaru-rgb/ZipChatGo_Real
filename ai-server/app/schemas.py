@@ -172,3 +172,4 @@ class TransitStationSearchResult(BaseModel):
 
 class LawSearchArguments(BaseModel):
     query: str = Field(min_length=1, max_length=500)
+    law_names: list[str] = Field(default_factory=list, max_length=8)

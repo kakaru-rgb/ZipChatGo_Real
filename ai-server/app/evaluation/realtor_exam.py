@@ -133,7 +133,8 @@ def evaluate_exam(
 CSV_FIELDS = (
     "연도", "시험", "교시", "과목", "문항번호", "문제",
     "선택지1", "선택지2", "선택지3", "선택지4", "선택지5",
-    "선택지별판단", "모델원래예측", "판단조합", "조합검증결과", "챗봇예측",
+    "법령명필터", "선택지별검색근거", "선택지별판단", "모델원래예측",
+    "판단조합", "조합검증결과", "챗봇예측",
     "공식정답", "정답여부", "챗봇원문답변", "평가모델",
     "RAG사용여부", "RAG검색어", "RAG검색결과수", "RAG검색근거",
     "법령링크포함", "오류", "문항키",
@@ -158,6 +159,8 @@ def make_result_row(
     *,
     model: str = "",
     original_prediction: int | None = None,
+    law_name_filters: Sequence[str] = (),
+    choice_evidence: Sequence[dict[str, Any]] = (),
     choice_judgments: Sequence[dict[str, Any]] = (),
     resolved_items: Sequence[dict[str, str]] = (),
     combination_check: str = "",
@@ -180,6 +183,10 @@ def make_result_row(
         "문항번호": str(question.question_no),
         "문제": question.question,
         **{f"선택지{index}": choice for index, choice in enumerate(question.choices, 1)},
+        "법령명필터": " | ".join(law_name_filters),
+        "선택지별검색근거": json.dumps(
+            list(choice_evidence), ensure_ascii=False, separators=(",", ":")
+        ),
         "선택지별판단": json.dumps(
             list(choice_judgments), ensure_ascii=False, separators=(",", ":")
         ),
