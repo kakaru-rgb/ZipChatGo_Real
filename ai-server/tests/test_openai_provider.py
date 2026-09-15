@@ -641,7 +641,7 @@ def test_generate_normalizes_model_law_link_text() -> None:
     assert result.message.count(source_url) == 1
 
 
-def test_generate_blocks_ungrounded_law_answer_when_search_is_empty() -> None:
+def test_generate_keeps_general_law_answer_when_search_is_empty() -> None:
     client = Mock()
     law_call = SimpleNamespace(
         type="function_call",
@@ -651,7 +651,7 @@ def test_generate_blocks_ungrounded_law_answer_when_search_is_empty() -> None:
     )
     client.responses.create.side_effect = [
         SimpleNamespace(output=[law_call], output_text=""),
-        SimpleNamespace(output=[], output_text="신고한 날부터 효력이 생깁니다."),
+        SimpleNamespace(output=[], output_text="일반적으로는 계약 내용과 신고 상황을 함께 확인해야 합니다. 실제 적용 전 최신 법령을 확인하세요."),
     ]
     search_law = Mock(
         return_value={"query": "대항력 발생 시점", "total_count": 0, "results": []}
@@ -664,8 +664,63 @@ def test_generate_blocks_ungrounded_law_answer_when_search_is_empty() -> None:
             search_real_estate_law=search_law,
         )
 
-    assert "공식 현행 법령 검색" in result.message
-    assert "신고한 날부터" not in result.message
+    assert "계약 내용과 신고 상황" in result.message
+    assert "직접 확인하지 못했습니다" in result.message
+
+
+def test_generate_allows_general_explanation_when_retrieval_is_partial() -> None:
+    client = Mock()
+    law_call = SimpleNamespace(
+        type="function_call",
+        name="search_real_estate_law",
+        arguments=json.dumps({"query": "임대차 계약"}),
+        call_id="law-search-partial",
+    )
+    client.responses.create.side_effect = [
+        SimpleNamespace(output=[law_call], output_text=""),
+        SimpleNamespace(
+            output=[],
+            output_text="검색된 조문은 임대차의 기본 요건을 설명합니다. 그 밖의 세부 적용은 일반적으로 계약 내용과 사실관계를 함께 봅니다.",
+        ),
+    ]
+    search_law = Mock(return_value={
+        "total_count": 1,
+        "results": [{
+            "law_name": "주택임대차보호법",
+            "article_number": "제3조",
+            "text": "주택의 인도와 주민등록",
+            "source_url": "https://www.law.go.kr/example",
+        }],
+    })
+
+    with patch("app.providers.openai_provider.OpenAI", return_value=client):
+        provider = OpenAIProvider("test-key", "test-model", "instructions")
+        result = provider.generate("임대차 계약에서 무엇을 확인해야 해?", search_real_estate_law=search_law)
+
+    assert "계약 내용과 사실관계" in result.message
+    assert "관련 법령" not in result.message
+
+
+def test_generate_blocks_unretrieved_article_when_search_is_empty() -> None:
+    client = Mock()
+    law_call = SimpleNamespace(
+        type="function_call",
+        name="search_real_estate_law",
+        arguments=json.dumps({"query": "임대차 계약"}),
+        call_id="law-search-empty-citation",
+    )
+    client.responses.create.side_effect = [
+        SimpleNamespace(output=[law_call], output_text=""),
+        SimpleNamespace(output=[], output_text="주택임대차보호법 제99조에 따르면 확정됩니다."),
+    ]
+    search_law = Mock(return_value={"total_count": 0, "results": []})
+
+    with patch("app.providers.openai_provider.OpenAI", return_value=client):
+        provider = OpenAIProvider("test-key", "test-model", "instructions")
+        result = provider.generate("임대차 계약에서 무엇을 확인해야 해?", search_real_estate_law=search_law)
+
+    assert "조문 인용이 일치하지 않아" in result.message
+    assert "제99조" not in result.message
 
 
 def test_generate_blocks_law_citation_not_present_in_search_results() -> None:

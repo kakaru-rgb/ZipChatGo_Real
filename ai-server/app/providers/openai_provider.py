@@ -282,12 +282,15 @@ App State의 zoom과 move_map의 zoom은 사용자 화면에 표시되는 0~8 �
 특정 위치로 move_map을 호출할 때는 zoom을 6 이상으로 지정하여 목적지가 분명히 보이게 하세요.
 사용자가 '확대해줘', '축소해줘'처럼 현재 위치에서 확대·축소만 요청하면 zoom_map을 호출하세요.
 '조금'은 1단계, 별도 정도 표현이 없으면 2단계, '많이'는 3단계로 조정하세요.
-법률상 권리·의무·효력·기한·책임의 근거가 필요한 질문에는 search_real_estate_law를 사용하세요.
+정확한 조문·기한·금액·권리 요건·신고·처벌 또는 공식 근거가 중요한 법률 질문에는
+search_real_estate_law를 우선 고려하세요. 간단한 일반 법률 설명에는 반드시 호출할 필요는 없습니다.
 지도 이동, 매물 검색·추천, 매물 가격·면적 확인에는 법률 검색을 사용하지 마세요.
-법률 답변은 Tool 결과에 실제로 포함된 법령명, 조문 번호와 내용만 근거로 작성하세요.
-검색 결과가 없거나 질문에 충분하지 않으면 근거가 부족하다고 명확히 말하고 조문을 추측하지 마세요.
-Tool 결과에 없는 판례나 행정해석을 확인한 것처럼 말하지 마세요.
-가능하면 답변에 법령명·조문 번호·시행일을 표시하세요. 공식 출처 링크를 직접 작성한다면
+검색 결과가 충분하면 실제 조문으로 설명하세요. 부족하거나 0건이면 확인된 범위와
+일반 법률 지식으로 설명할 범위를 구분하고, 공식 검색에서 직접 확인되지 않은 부분임을 알리세요.
+검색되지 않은 조문·판례번호·시행일을 만들어 인용하지 말고, 최신 판례나 행정해석을
+확인하지 못했다면 그 사실을 밝힌 뒤 일반적인 법리만 설명하세요.
+이미 충분한 근거가 있거나 반복 검색에서 새 근거가 나오지 않으면 검색을 멈추고 답변하세요.
+검색된 조문을 인용할 때만 실제 결과의 법령명·조문 번호·시행일을 표시하세요. 공식 출처 링크를 직접 작성한다면
 링크 문구는 반드시 '국가법령정보센터에서 확인하기'만 사용하세요.
 법률 검색 결과는 rank 숫자가 작고 score가 높을수록 관련성이 높습니다. rank 1 조문을 우선 검토하고,
 다른 조문은 질문에 직접 관련된 내용이 실제 본문에 있을 때만 보충 근거로 사용하세요.
@@ -510,16 +513,20 @@ class OpenAIProvider:
                     law_search_results.extend(result.get("results", []))
                     if result.get("total_count", 0) == 0:
                         post_tool_instruction = (
-                            "공식 법령 검색 결과가 0건입니다. 일반 지식으로 법률상 시점, "
-                            "요건, 권리 또는 의무를 보완하지 말고 공식 근거를 찾지 못했다고만 "
-                            "답하세요."
+                            "공식 법령 검색 결과가 0건입니다. 확인되지 않은 정확한 조문·판례·"
+                            "시행일은 인용하지 마세요. 현재 연결된 공식 검색에서 직접 확인하지 "
+                            "못했음을 밝히고, 일반 법률 지식으로 유용하게 설명한 뒤 구체적 적용은 "
+                            "최신 자료로 확인하도록 안내하세요. 새 근거가 나올 가능성이 낮으면 "
+                            "검색을 반복하지 마세요."
                         )
                     else:
                         post_tool_instruction = (
                             "방금 반환된 법률 검색 결과는 관련도 순입니다. rank 1의 본문을 "
                             "먼저 질문과 대조하고, 답변에 쓰는 법령명·조문 번호·시행일은 "
-                            "결과 필드의 값을 정확히 복사하세요. 질문에 답하는 문구가 결과 "
-                            "본문에 없으면 추측하지 말고 근거가 부족하다고 답하세요."
+                            "결과 필드의 값을 정확히 복사하세요. 결과에 없는 세부 사항은 "
+                            "일반 법률 지식으로 설명할 수 있지만 검색된 공식 근거로 확인된 "
+                            "것처럼 표현하지 마세요. 충분한 근거를 확보했거나 추가 검색에서 "
+                            "새 근거가 없다면 검색을 멈추고 답변하세요."
                         )
                 else:
                     action = _parse_ui_action(
@@ -573,8 +580,18 @@ def _ground_law_response(
     message: str,
     search_results: list[dict[str, Any]],
 ) -> str:
+    message_without_source_links = _remove_model_law_source_lines(message)
+    cited_articles = {
+        _normalize_article_number(match)
+        for match in re.findall(r"제\s*\d+조(?:의\s*\d+)?", message_without_source_links)
+    }
     if not search_results:
-        return SAFE_LAW_NO_RESULT_MESSAGE
+        if cited_articles:
+            return SAFE_LAW_CITATION_MISMATCH_MESSAGE
+        return (
+            "현재 연결된 공식 법령 검색에서는 이 내용을 직접 확인하지 못했습니다. "
+            + message_without_source_links
+        ) if message_without_source_links else SAFE_LAW_NO_RESULT_MESSAGE
 
     allowed_law_names = {
         str(item.get("law_name", "")).strip()
@@ -586,17 +603,11 @@ def _ground_law_response(
         for item in search_results
         if str(item.get("article_number", "")).strip()
     }
-    cited_articles = {
-        _normalize_article_number(match)
-        for match in re.findall(r"제\s*\d+조(?:의\s*\d+)?", message)
-    }
     cites_allowed_law = any(law_name in message for law_name in allowed_law_names)
-    if (
-        not cited_articles
-        or not cited_articles.issubset(allowed_articles)
-        or not cites_allowed_law
-    ):
+    if cited_articles and (not cited_articles.issubset(allowed_articles) or not cites_allowed_law):
         return SAFE_LAW_CITATION_MISMATCH_MESSAGE
+    if not cited_articles:
+        return message_without_source_links
 
     source_lines = []
     for item in search_results:
@@ -619,7 +630,6 @@ def _ground_law_response(
         if source_line not in source_lines:
             source_lines.append(source_line)
 
-    message_without_source_links = _remove_model_law_source_lines(message)
     if source_lines:
         return (
             f"{message_without_source_links.rstrip()}\n\n관련 법령\n\n"
