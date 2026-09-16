@@ -108,6 +108,7 @@ def agent_chat(
             history=[item.model_dump() for item in request.history],
             recent_context=request.recent_context.model_dump(),
             search_properties=property_search.search,
+            get_properties_by_ids=property_search.get_by_ids,
             find_transit_station=transit_station.search,
             get_adjacent_legal_dongs=legal_dong_adjacency.lookup,
             search_real_estate_law=real_estate_law_search.search,

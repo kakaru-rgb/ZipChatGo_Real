@@ -2,7 +2,12 @@ from typing import Any
 
 import httpx
 
-from app.schemas import PropertySearchArguments, PropertySearchResult
+from app.schemas import (
+    PropertiesByIdsArguments,
+    PropertiesByIdsResult,
+    PropertySearchArguments,
+    PropertySearchResult,
+)
 
 
 class PropertySearchError(RuntimeError):
@@ -47,5 +52,23 @@ class PropertySearchTool:
             result = PropertySearchResult.model_validate(response.json())
         except (httpx.HTTPError, ValueError) as exception:
             raise PropertySearchError("Spring property search request failed") from exception
+
+        return result.model_dump()
+
+    def get_by_ids(self, raw_arguments: dict[str, Any]) -> dict[str, Any]:
+        arguments = PropertiesByIdsArguments.model_validate(raw_arguments)
+        property_ids = list(dict.fromkeys(arguments.property_ids))
+        if any(property_id < 1 for property_id in property_ids):
+            raise PropertySearchError("Property IDs must be positive")
+
+        try:
+            response = self._client.get(
+                "/api/map/properties/by-ids",
+                params={"ids": ",".join(str(property_id) for property_id in property_ids)},
+            )
+            response.raise_for_status()
+            result = PropertiesByIdsResult.model_validate(response.json())
+        except (httpx.HTTPError, ValueError) as exception:
+            raise PropertySearchError("Spring property lookup request failed") from exception
 
         return result.model_dump()

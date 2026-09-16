@@ -9,6 +9,21 @@ let favoritePropertyIds = loadFavoritePropertyIds();
 document.addEventListener("DOMContentLoaded", initializeFavoritePage);
 window.addEventListener("storage", handleFavoriteStorageChange);
 
+function returnToPreviousMap(event) {
+  try {
+    const previousUrl = new URL(document.referrer);
+    if (previousUrl.origin === window.location.origin && previousUrl.pathname === "/properties/map") {
+      event.preventDefault();
+      window.history.back();
+    }
+  } catch (error) {
+    // Keep the link's normal map navigation when there is no usable referrer.
+  }
+}
+
+document.getElementById("favoriteEmptyMapLink")?.addEventListener("click", returnToPreviousMap);
+document.getElementById("favoriteMapBack")?.addEventListener("click", returnToPreviousMap);
+
 async function initializeFavoritePage() {
   try {
     const response = await fetch("/api/map/properties");
@@ -31,7 +46,7 @@ async function initializeFavoritePage() {
 
 function loadFavoritePropertyIds() {
   try {
-    const storedValue = JSON.parse(localStorage.getItem(FAVORITE_PROPERTY_STORAGE_KEY) || "[]");
+    const storedValue = JSON.parse(sessionStorage.getItem(FAVORITE_PROPERTY_STORAGE_KEY) || "[]");
     if (!Array.isArray(storedValue)) return new Set();
 
     return new Set(storedValue.map(id => String(id)));
@@ -43,7 +58,7 @@ function loadFavoritePropertyIds() {
 
 function saveFavoritePropertyIds() {
   try {
-    localStorage.setItem(
+    sessionStorage.setItem(
       FAVORITE_PROPERTY_STORAGE_KEY,
       JSON.stringify(Array.from(favoritePropertyIds))
     );
@@ -158,11 +173,13 @@ function syncCardFavoriteToggle(button, propertyId) {
 
 function updateFavoriteSummary() {
   const summary = document.getElementById("favoriteSummary");
+  const mapBack = document.getElementById("favoriteMapBack");
   const favoriteCount = allFavoritePageProperties.filter(item => (
     favoritePropertyIds.has(item.id)
   )).length;
 
   summary.innerHTML = `총 <strong>${favoriteCount.toLocaleString()}개</strong>의 관심목록이 있습니다.`;
+  mapBack.hidden = favoriteCount === 0;
 }
 
 function openPropertyOnMap(propertyId) {

@@ -53,6 +53,34 @@ SEARCH_PROPERTIES_TOOL = {
     "strict": True,
 }
 
+GET_PROPERTIES_BY_IDS_TOOL = {
+    "type": "function",
+    "name": "get_properties_by_ids",
+    "description": (
+        "Fetches actual property details for IDs in the current App State. Use it when the "
+        "user asks to list, filter, compare, or map their favorite properties. Pass the "
+        "favorite_property_ids from App State. Keep the answer limited to the returned favorites; "
+        "do not substitute recent or general-search properties when no favorite matches. Use "
+        "search_properties only for a general search or an explicitly requested fallback. "
+        "Return only the level of detail requested: names for a simple list, relevant fields for "
+        "a comparison, and full details only when the user explicitly asks for details."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "property_ids": {
+                "type": "array",
+                "items": {"type": "integer", "minimum": 1},
+                "minItems": 1,
+                "maxItems": 50,
+            }
+        },
+        "required": ["property_ids"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
 SEARCH_REAL_ESTATE_LAW_TOOL = {
     "type": "function",
     "name": "search_real_estate_law",
@@ -249,6 +277,7 @@ GET_ADJACENT_LEGAL_DONGS_TOOL = {
 
 AGENT_TOOLS = [
     SEARCH_PROPERTIES_TOOL,
+    GET_PROPERTIES_BY_IDS_TOOL,
     SEARCH_REAL_ESTATE_LAW_TOOL,
     FIND_TRANSIT_STATION_TOOL,
     MOVE_MAP_TOOL,
@@ -261,6 +290,8 @@ AGENT_TOOLS = [
 ]
 
 UI_ACTION_INSTRUCTIONS = """
+For questions about the current favorite-property list, its prices, areas, locations, details, or comparison, call get_properties_by_ids with the favorite_property_ids from App State. If that list is empty, explain that this session has no favorites without calling the tool. Never invent or add IDs. For a general regional property search, continue to use search_properties. When the user explicitly asks to show favorites on the map, reuse fit_bounds and highlight_properties with the properties returned by get_properties_by_ids.
+Match the favorite-property answer detail to the question. For a count question, answer only the count from favorite_property_ids and do not call get_properties_by_ids or print property details. For a simple list question, list only property names or the minimum identifying information; omit price, area, and full address unless requested. For a detail question, provide the requested details. For a comparison question, state the result and only the fields needed for that comparison; do not dump every field of every favorite.
 사용자가 매물을 찾아 지도에 보여 달라고 하면 search_properties를 먼저 호출하세요.
 현재 App State에 selected_region이 있고 사용자가 '여기', '이 동', '선택한 지역'을 말하면
 selected_region의 법정동을 현재 지도 bounds보다 우선해서 사용하세요.
@@ -365,6 +396,7 @@ class OpenAIProvider:
         history: list[dict[str, str]] | None = None,
         recent_context: dict[str, Any] | None = None,
         search_properties: ToolHandler | None = None,
+        get_properties_by_ids: ToolHandler | None = None,
         find_transit_station: ToolHandler | None = None,
         get_adjacent_legal_dongs: ToolHandler | None = None,
         search_real_estate_law: ToolHandler | None = None,
@@ -404,6 +436,7 @@ class OpenAIProvider:
 
         if (
             search_properties is None
+            and get_properties_by_ids is None
             and find_transit_station is None
             and get_adjacent_legal_dongs is None
             and search_real_estate_law is None
@@ -423,6 +456,7 @@ class OpenAIProvider:
 
         actions: list[UiAction] = []
         searched_properties: list[dict[str, Any]] = []
+        favorite_properties: list[dict[str, Any]] = []
         searched_stations: list[dict[str, Any]] = []
         law_search_attempted = False
         law_search_results: list[dict[str, Any]] = []
@@ -432,9 +466,30 @@ class OpenAIProvider:
             message,
             app_state,
         )
+        favorite_scope_requested = any(
+            phrase in message
+            for phrase in ("관심매물", "관심 매물", "찜한 것", "찜한 매물", "찜해둔")
+        )
+        favorite_count_requested = favorite_scope_requested and any(
+            phrase in message
+            for phrase in ("몇 개", "몇개", "개수", "몇 건", "몇건")
+        )
+        favorite_property_ids = {
+            int(value)
+            for value in (app_state.get("favorite_property_ids", []) if app_state else [])
+            if str(value).isdigit() and int(value) > 0
+        }
+        favorite_fallback_requested = (
+            "없으면" in message
+            and any(phrase in message for phrase in ("찾아", "검색", "추천"))
+        )
         excluded_tool_names: set[str] = set()
-        if search_properties is None:
+        if search_properties is None or (
+            favorite_scope_requested and not favorite_fallback_requested
+        ):
             excluded_tool_names.add("search_properties")
+        if get_properties_by_ids is None or favorite_count_requested:
+            excluded_tool_names.add("get_properties_by_ids")
         if not station_search_allowed or find_transit_station is None:
             excluded_tool_names.add("find_transit_station")
         if get_adjacent_legal_dongs is None:
@@ -447,6 +502,21 @@ class OpenAIProvider:
             tool for tool in AGENT_TOOLS if tool["name"] not in excluded_tool_names
         ]
         request_instructions = f"{self._instructions}\n\n{UI_ACTION_INSTRUCTIONS}"
+        if favorite_scope_requested:
+            request_instructions += (
+                "\n\nThis request is restricted to the current favorite_property_ids. "
+                "Use only get_properties_by_ids results when filtering, comparing, or answering. "
+                "Do not mention recentContext properties or offer substitute properties. If no "
+                "favorite matches, simply say that none match. A general property search is allowed "
+                "only when the user explicitly requested a fallback search."
+            )
+        if favorite_count_requested:
+            request_instructions += (
+                f"\n\nThis is a count-only question. The current favorite_property_ids count is "
+                f"{len(favorite_property_ids)}. Answer only that count in one concise sentence. "
+                "Do not call a property tool and do not include names, prices, areas, addresses, "
+                "or any other property details."
+            )
         if required_region_name:
             request_instructions += (
                 f"\n\n이번 요청은 분당구 법정동 '{required_region_name}'으로 지도 이동 또는 선택을 "
@@ -465,7 +535,11 @@ class OpenAIProvider:
             if app_state
             and str(app_state.get("selected_property_id", "")).isdigit()
         }
-        allowed_property_ids.update(context.recent_property_ids)
+        favorite_map_requested = "지도" in message
+        if favorite_scope_requested:
+            allowed_property_ids.clear()
+        else:
+            allowed_property_ids.update(context.recent_property_ids)
         next_recent_property_ids = list(context.recent_property_ids)
         next_recent_properties = list(context.recent_properties)
         last_referenced_property_id = context.last_referenced_property_id
@@ -479,6 +553,17 @@ class OpenAIProvider:
                 "store": False,
             }
             if (
+                iteration == 0
+                and favorite_scope_requested
+                and not favorite_count_requested
+                and favorite_property_ids
+                and get_properties_by_ids is not None
+            ):
+                request_options["tool_choice"] = {
+                    "type": "function",
+                    "name": "get_properties_by_ids",
+                }
+            elif (
                 iteration == 0
                 and required_adjacency_region
                 and get_adjacent_legal_dongs is not None
@@ -497,6 +582,8 @@ class OpenAIProvider:
             if not function_calls:
                 if searched_properties:
                     actions = _with_default_search_actions(actions, searched_properties)
+                if favorite_map_requested and favorite_properties:
+                    actions = _with_default_search_actions(actions, favorite_properties)
                 if searched_stations:
                     actions = _with_default_station_action(actions, searched_stations)
                 if required_region_name:
@@ -567,6 +654,36 @@ class OpenAIProvider:
                         for item in searched_properties
                         if str(item.get("id", "")).isdigit()
                     )
+                elif (
+                    function_call.name == "get_properties_by_ids"
+                    and get_properties_by_ids
+                ):
+                    arguments = json.loads(function_call.arguments)
+                    requested_ids = list(dict.fromkeys(
+                        int(value)
+                        for value in arguments.get("property_ids", [])
+                        if str(value).isdigit() and int(value) > 0
+                    ))
+                    requested_id_set = set(requested_ids)
+                    if not favorite_property_ids:
+                        result = {
+                            "status": "rejected",
+                            "reason": "The current session has no favorite properties.",
+                        }
+                    elif not requested_ids or not requested_id_set.issubset(favorite_property_ids):
+                        result = {
+                            "status": "rejected",
+                            "reason": "Only favorite_property_ids from App State may be queried.",
+                        }
+                    else:
+                        arguments["property_ids"] = requested_ids
+                        result = get_properties_by_ids(arguments)
+                        favorite_properties = result.get("properties", [])
+                        allowed_property_ids.update(
+                            int(item["id"])
+                            for item in favorite_properties
+                            if str(item.get("id", "")).isdigit()
+                        )
                 elif function_call.name == "find_transit_station" and find_transit_station:
                     arguments = json.loads(function_call.arguments)
                     query = arguments.get("query")

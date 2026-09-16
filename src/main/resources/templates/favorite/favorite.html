@@ -57,6 +57,14 @@
         <p id="favoriteSummary" class="favorite-summary" aria-live="polite">
           총 <strong>0개</strong>의 관심목록이 있습니다.
         </p>
+        <a id="favoriteMapBack"
+           class="favorite-map-back"
+           href="/properties/map"
+           th:href="@{/properties/map}"
+           hidden>
+          <i class="ti ti-arrow-left" aria-hidden="true"></i>
+          이전 지도로 돌아가기
+        </a>
       </div>
 
       <div id="favoriteGrid" class="favorite-grid" aria-live="polite"></div>
@@ -69,7 +77,7 @@
         </span>
         <h2>아직 관심 매물이 없습니다</h2>
         <p>지도에서 마음에 드는 매물의 하트를 눌러 저장해 보세요.</p>
-        <a href="/properties/map" th:href="@{/properties/map}">지도에서 매물 둘러보기</a>
+        <a id="favoriteEmptyMapLink" href="/properties/map" th:href="@{/properties/map}">지도에서 매물 둘러보기</a>
       </section>
     </section>
   </main>

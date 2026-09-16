@@ -117,3 +117,26 @@ def test_search_passes_selected_legal_dong_code_to_spring() -> None:
             "legalDongCode": "41135108",
         },
     )
+
+
+def test_get_by_ids_calls_spring_and_keeps_missing_ids() -> None:
+    client = Mock()
+    client.get.return_value = httpx.Response(
+        200,
+        json={
+            "requested_ids": [427, 903],
+            "properties": [{"id": 427, "sale_price": 780_000_000}],
+            "missing_ids": [903],
+        },
+        request=httpx.Request("GET", "http://spring/api/map/properties/by-ids"),
+    )
+    tool = PropertySearchTool("http://spring", client=client)
+
+    result = tool.get_by_ids({"property_ids": [427, 903]})
+
+    client.get.assert_called_once_with(
+        "/api/map/properties/by-ids",
+        params={"ids": "427,903"},
+    )
+    assert result["properties"][0]["id"] == 427
+    assert result["missing_ids"] == [903]

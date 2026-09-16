@@ -7,6 +7,7 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -162,6 +163,28 @@ public class MapDataService {
         return new PropertySearchResult(summaries, matches.size(), allProperties.source());
     }
 
+    public PropertiesByIdsResult getPropertiesByIds(List<Long> propertyIds) {
+        MapDataResult allProperties = getProperties();
+        LinkedHashSet<Long> requestedIds = new LinkedHashSet<>(propertyIds);
+        Map<Long, Map<String, Object>> propertiesById = new LinkedHashMap<>();
+        for (Map<String, Object> property : allProperties.data()) {
+            Long id = propertyIdOf(property);
+            if (id != null && requestedIds.contains(id)) {
+                propertiesById.put(id, summarizeProperty(property));
+            }
+        }
+
+        List<Map<String, Object>> properties = requestedIds.stream()
+                .map(propertiesById::get)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        List<Long> missingIds = requestedIds.stream()
+                .filter(id -> !propertiesById.containsKey(id))
+                .toList();
+        return new PropertiesByIdsResult(
+                List.copyOf(requestedIds), properties, missingIds, allProperties.source());
+    }
+
     private boolean matchesLegalDong(Map<String, Object> property, String legalDongName) {
         return PROPERTY_SEARCH_FIELDS.stream()
                 .map(property::get)
@@ -263,6 +286,18 @@ public class MapDataService {
         return value instanceof Number number ? number.longValue() : Long.MAX_VALUE;
     }
 
+    private Long propertyIdOf(Map<String, Object> property) {
+        Object value = property.get("id");
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return value == null ? null : Long.valueOf(value.toString());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
     private double coordinateOf(Map<String, Object> property, String field) {
         Object value = property.get(field);
         return value instanceof Number number ? number.doubleValue() : Double.NaN;
@@ -333,6 +368,12 @@ public class MapDataService {
     public record PropertySearchResult(
             List<Map<String, Object>> properties,
             int totalCount,
+            MapDataSource source) {}
+
+    public record PropertiesByIdsResult(
+            List<Long> requestedIds,
+            List<Map<String, Object>> properties,
+            List<Long> missingIds,
             MapDataSource source) {}
 
     public record TransitStationSearchResult(

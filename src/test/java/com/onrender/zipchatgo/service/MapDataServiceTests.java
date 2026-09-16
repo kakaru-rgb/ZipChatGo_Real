@@ -77,6 +77,26 @@ class MapDataServiceTests {
 
     @SuppressWarnings("unchecked")
     @Test
+    void getsPropertiesByIdsInRequestedOrderAndReportsMissingIds() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class))).thenReturn(List.of(
+                property(427L, "first", "apartment", 780_000_000L, "district-a"),
+                property(903L, "second", "villa", 650_000_000L, "district-b")));
+        MapDataService service = new MapDataService(jdbcTemplate, new ObjectMapper());
+
+        MapDataService.PropertiesByIdsResult result =
+                service.getPropertiesByIds(List.of(903L, 999L, 427L));
+
+        assertThat(result.requestedIds()).containsExactly(903L, 999L, 427L);
+        assertThat(result.properties())
+                .extracting(property -> property.get("id"))
+                .containsExactly(903L, 427L);
+        assertThat(result.missingIds()).containsExactly(999L);
+        assertThat(result.properties().getFirst()).doesNotContainKey("description");
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
     void searchesAndMergesTransitStationEntriesByStationName() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         MapDataService service = new MapDataService(jdbcTemplate, new ObjectMapper());

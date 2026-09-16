@@ -183,6 +183,16 @@ class PropertySearchResult(BaseModel):
     properties: list[dict[str, Any]]
 
 
+class PropertiesByIdsArguments(BaseModel):
+    property_ids: list[int] = Field(min_length=1, max_length=50)
+
+
+class PropertiesByIdsResult(BaseModel):
+    requested_ids: list[int]
+    properties: list[dict[str, Any]]
+    missing_ids: list[int]
+
+
 class TransitStationSearchArguments(BaseModel):
     query: str = Field(min_length=1, max_length=100)
 

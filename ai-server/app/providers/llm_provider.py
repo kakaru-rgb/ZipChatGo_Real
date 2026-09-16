@@ -25,6 +25,7 @@ class LLMProvider(Protocol):
         history: list[dict[str, str]] | None = None,
         recent_context: dict[str, Any] | None = None,
         search_properties: ToolHandler | None = None,
+        get_properties_by_ids: ToolHandler | None = None,
         find_transit_station: ToolHandler | None = None,
         get_adjacent_legal_dongs: ToolHandler | None = None,
         search_real_estate_law: ToolHandler | None = None,

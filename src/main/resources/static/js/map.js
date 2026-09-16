@@ -1742,7 +1742,7 @@ function getFloorplanImagePath(item) {
 
 function loadFavoritePropertyIds() {
   try {
-    const storedValue = JSON.parse(localStorage.getItem(FAVORITE_PROPERTY_STORAGE_KEY) || "[]");
+    const storedValue = JSON.parse(sessionStorage.getItem(FAVORITE_PROPERTY_STORAGE_KEY) || "[]");
     if (!Array.isArray(storedValue)) return new Set();
 
     return new Set(storedValue.map(id => String(id)));
@@ -1754,7 +1754,7 @@ function loadFavoritePropertyIds() {
 
 function saveFavoritePropertyIds() {
   try {
-    localStorage.setItem(
+    sessionStorage.setItem(
       FAVORITE_PROPERTY_STORAGE_KEY,
       JSON.stringify(Array.from(favoritePropertyIds))
     );

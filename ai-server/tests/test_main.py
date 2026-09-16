@@ -22,6 +22,7 @@ class FakeOpenAIProvider:
     def __init__(self) -> None:
         self.app_state = None
         self.get_adjacent_legal_dongs = None
+        self.get_properties_by_ids = None
         self.search_real_estate_law = None
         self.history = None
         self.recent_context = None
@@ -33,6 +34,7 @@ class FakeOpenAIProvider:
         history=None,
         recent_context=None,
         search_properties=None,
+        get_properties_by_ids=None,
         find_transit_station=None,
         get_adjacent_legal_dongs=None,
         search_real_estate_law=None,
@@ -41,6 +43,7 @@ class FakeOpenAIProvider:
         self.history = history
         self.recent_context = recent_context
         self.get_adjacent_legal_dongs = get_adjacent_legal_dongs
+        self.get_properties_by_ids = get_properties_by_ids
         self.search_real_estate_law = search_real_estate_law
         return AgentReply(
             message=f"AI response to: {message}",
@@ -135,6 +138,7 @@ def test_agent_chat_returns_provider_response() -> None:
     assert provider.history[0]["content"] == "분당 매물을 찾아줘"
     assert provider.recent_context["recent_property_ids"] == [101, 205]
     assert callable(provider.get_adjacent_legal_dongs)
+    assert callable(provider.get_properties_by_ids)
     assert callable(provider.search_real_estate_law)
 
 
@@ -164,6 +168,7 @@ class FailingOpenAIProvider:
         history=None,
         recent_context=None,
         search_properties=None,
+        get_properties_by_ids=None,
         find_transit_station=None,
         get_adjacent_legal_dongs=None,
         search_real_estate_law=None,

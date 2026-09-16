@@ -9,6 +9,7 @@ import com.onrender.zipchatgo.service.MapDataService;
 import com.onrender.zipchatgo.service.MapDataService.GeoBounds;
 import com.onrender.zipchatgo.service.MapDataService.MapDataResult;
 import com.onrender.zipchatgo.service.MapDataService.PropertySearchResult;
+import com.onrender.zipchatgo.service.MapDataService.PropertiesByIdsResult;
 import com.onrender.zipchatgo.service.MapDataService.TransitStationSearchResult;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
@@ -63,6 +64,26 @@ public class MapDataController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("total_count", result.totalCount());
         body.put("properties", result.properties());
+
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("X-Map-Data-Source", result.source().headerValue())
+                .body(body);
+    }
+
+    @GetMapping(value = "/properties/by-ids", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> propertiesByIds(@RequestParam List<Long> ids) {
+        if (ids.isEmpty() || ids.size() > 50 || ids.stream().anyMatch(id -> id == null || id < 1)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "ids must contain between 1 and 50 positive values");
+        }
+
+        PropertiesByIdsResult result = mapDataService.getPropertiesByIds(ids);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("requested_ids", result.requestedIds());
+        body.put("properties", result.properties());
+        body.put("missing_ids", result.missingIds());
 
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())

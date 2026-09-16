@@ -152,6 +152,7 @@ def test_generate_executes_property_search_and_returns_final_answer() -> None:
     assert first_request["tools"] == [
         tool for tool in AGENT_TOOLS
         if tool["name"] not in {
+            "get_properties_by_ids",
             "find_transit_station",
             "get_adjacent_legal_dongs",
             "search_real_estate_law",
@@ -170,6 +171,114 @@ def test_generate_executes_property_search_and_returns_final_answer() -> None:
     assert result.recent_context.recent_property_ids == [1, 2]
     assert result.recent_context.last_referenced_property_id is None
     assert [item.id for item in result.recent_context.recent_properties] == [1, 2]
+
+
+def test_generate_fetches_only_favorite_property_ids() -> None:
+    client = Mock()
+    favorite_call = SimpleNamespace(
+        type="function_call",
+        name="get_properties_by_ids",
+        arguments=json.dumps({"property_ids": [427, 903]}),
+        call_id="favorites-1",
+    )
+    client.responses.create.side_effect = [
+        SimpleNamespace(output=[favorite_call], output_text=""),
+        SimpleNamespace(output=[], output_text="관심매물을 비교했습니다."),
+    ]
+    get_properties_by_ids = Mock(
+        return_value={
+            "requested_ids": [427, 903],
+            "properties": [
+                {"id": 427, "sale_price": 780_000_000, "exclusive_area": 84.9},
+                {"id": 903, "sale_price": 650_000_000, "exclusive_area": 59.8},
+            ],
+            "missing_ids": [],
+        }
+    )
+
+    with patch("app.providers.openai_provider.OpenAI", return_value=client):
+        provider = OpenAIProvider("test-key", "test-model", "instructions")
+        result = provider.generate(
+            "내 관심매물들을 비교해줘.",
+            app_state={"favorite_property_ids": [427, 903]},
+            get_properties_by_ids=get_properties_by_ids,
+        )
+
+    get_properties_by_ids.assert_called_once_with({"property_ids": [427, 903]})
+    first_request = client.responses.create.call_args_list[0].kwargs
+    assert first_request["tool_choice"] == {
+        "type": "function",
+        "name": "get_properties_by_ids",
+    }
+    assert "search_properties" not in {tool["name"] for tool in first_request["tools"]}
+    tool_output = json.loads(
+        client.responses.create.call_args_list[1].kwargs["input"][-1]["output"]
+    )
+    assert tool_output["properties"][1]["sale_price"] == 650_000_000
+    assert result.message == "관심매물을 비교했습니다."
+    assert result.actions == []
+
+
+def test_generate_maps_favorite_properties_with_existing_actions() -> None:
+    client = Mock()
+    favorite_call = SimpleNamespace(
+        type="function_call",
+        name="get_properties_by_ids",
+        arguments=json.dumps({"property_ids": [427, 903]}),
+        call_id="favorite-map-1",
+    )
+    client.responses.create.side_effect = [
+        SimpleNamespace(output=[favorite_call], output_text=""),
+        SimpleNamespace(output=[], output_text="관심매물을 지도에 표시했습니다."),
+    ]
+    get_properties_by_ids = Mock(
+        return_value={
+            "requested_ids": [427, 903],
+            "properties": [
+                {"id": 427, "latitude": 37.37, "longitude": 127.11},
+                {"id": 903, "latitude": 37.39, "longitude": 127.12},
+            ],
+            "missing_ids": [],
+        }
+    )
+
+    with patch("app.providers.openai_provider.OpenAI", return_value=client):
+        provider = OpenAIProvider("test-key", "test-model", "instructions")
+        result = provider.generate(
+            "내 관심매물을 지도에 보여줘.",
+            app_state={"favorite_property_ids": [427, 903]},
+            get_properties_by_ids=get_properties_by_ids,
+        )
+
+    assert [action.type for action in result.actions] == [
+        "FIT_BOUNDS",
+        "HIGHLIGHT_PROPERTIES",
+    ]
+    assert result.actions[0].property_ids == [427, 903]
+
+
+def test_generate_answers_favorite_count_without_detail_lookup() -> None:
+    client = Mock()
+    client.responses.create.return_value = SimpleNamespace(
+        output=[],
+        output_text="현재 관심매물은 총 3개입니다.",
+    )
+    get_properties_by_ids = Mock()
+
+    with patch("app.providers.openai_provider.OpenAI", return_value=client):
+        provider = OpenAIProvider("test-key", "test-model", "instructions")
+        result = provider.generate(
+            "현재 관심매물은 몇 개지?",
+            app_state={"favorite_property_ids": [427, 903, 1201]},
+            get_properties_by_ids=get_properties_by_ids,
+        )
+
+    get_properties_by_ids.assert_not_called()
+    request = client.responses.create.call_args.kwargs
+    assert "get_properties_by_ids" not in {tool["name"] for tool in request["tools"]}
+    assert "tool_choice" not in request
+    assert "count is 3" in request["instructions"]
+    assert result.message == "현재 관심매물은 총 3개입니다."
 
 
 def test_generate_collects_only_actions_for_searched_properties() -> None:
