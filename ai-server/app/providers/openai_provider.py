@@ -503,11 +503,10 @@ class OpenAIProvider:
                 ):
                     arguments = json.loads(function_call.arguments)
                     model_query = str(arguments.get("query", "")).strip()
-                    if model_query and model_query != message.strip():
-                        arguments["query"] = (
-                            f"사용자 질문: {message.strip()}\n"
-                            f"핵심 법률 검색어: {model_query}"
-                        )[:500]
+                    arguments["query"] = model_query
+                    # Preserve the user's explicit law/article references for
+                    # A/B routing without contaminating the semantic query.
+                    arguments["_user_question"] = message
                     result = search_real_estate_law(arguments)
                     law_search_attempted = True
                     law_search_results.extend(result.get("results", []))

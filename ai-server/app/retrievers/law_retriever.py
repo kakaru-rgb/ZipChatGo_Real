@@ -22,8 +22,11 @@ class LawSearchItem(BaseModel):
     text: str
     effective_date: str | None = None
     promulgation_date: str | None = None
+    promulgation_number: str | None = None
+    revision_type: str | None = None
     law_id: str | None = None
     law_serial_number: str | None = None
+    article_key: str | None = None
     source_url: str | None = None
     filename: str
 

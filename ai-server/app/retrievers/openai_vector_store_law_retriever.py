@@ -8,6 +8,7 @@ from app.retrievers.law_retriever import (
     LawSearchItem,
     LawSearchResponse,
 )
+from app.law.search_routing import LawArticlePair
 
 
 class OpenAIVectorStoreLawRetriever:
@@ -75,6 +76,39 @@ class OpenAIVectorStoreLawRetriever:
             results=results,
         )
 
+    def search_exact(
+        self,
+        query: str,
+        pairs: Sequence[LawArticlePair],
+    ) -> LawSearchResponse:
+        """Search only explicit law/article metadata pairs; no semantic score gate."""
+        results: list[LawSearchItem] = []
+        for pair in pairs:
+            try:
+                page = self._client.vector_stores.search(
+                    vector_store_id=self._vector_store_id,
+                    query=f"{pair.law_name} {pair.article_number}",
+                    filters={
+                        "type": "and",
+                        "filters": [
+                            {"type": "eq", "key": "law_name", "value": pair.law_name},
+                            {"type": "eq", "key": "article_number", "value": pair.article_number},
+                        ],
+                    },
+                    max_num_results=self._max_results,
+                    rewrite_query=False,
+                )
+            except APIError as exception:
+                raise LawRetrievalError("OpenAI Vector Store exact search failed") from exception
+            for item in getattr(page, "data", []):
+                converted = _to_search_item(item, len(results) + 1)
+                if (
+                    converted.law_name == pair.law_name
+                    and converted.article_number == pair.article_number
+                ):
+                    results.append(converted)
+        return LawSearchResponse(query=query.strip(), total_count=len(results), results=results)
+
 
 def _to_search_item(item: Any, rank: int) -> LawSearchItem:
     attributes = _as_mapping(getattr(item, "attributes", None))
@@ -94,8 +128,11 @@ def _to_search_item(item: Any, rank: int) -> LawSearchItem:
         text="\n".join(text_parts),
         effective_date=_metadata(attributes, "effective_date"),
         promulgation_date=_metadata(attributes, "promulgation_date"),
+        promulgation_number=_metadata(attributes, "promulgation_number"),
+        revision_type=_metadata(attributes, "revision_type"),
         law_id=_metadata(attributes, "law_id"),
         law_serial_number=_metadata(attributes, "law_serial_number"),
+        article_key=_metadata(attributes, "article_key"),
         source_url=_metadata(attributes, "source_url"),
         filename=str(getattr(item, "filename", "")),
     )

@@ -576,10 +576,8 @@ def test_generate_executes_law_search_and_returns_results_to_model() -> None:
 
     search_law.assert_called_once_with(
         {
-            "query": (
-                "사용자 질문: 전입신고하면 대항력이 언제 생겨?\n"
-                "핵심 법률 검색어: 전입신고하면 대항력은 언제 생겨?"
-            )
+            "query": "전입신고하면 대항력은 언제 생겨?",
+            "_user_question": "전입신고하면 대항력이 언제 생겨?",
         }
     )
     first_tools = client.responses.create.call_args_list[0].kwargs["tools"]
@@ -764,7 +762,7 @@ def test_generate_blocks_law_citation_not_present_in_search_results() -> None:
     assert "당일부터" not in result.message
 
 
-def test_generate_limits_augmented_law_query_to_schema_length() -> None:
+def test_generate_keeps_model_law_query_isolated_from_long_user_question() -> None:
     client = Mock()
     law_call = SimpleNamespace(
         type="function_call",
@@ -782,7 +780,9 @@ def test_generate_limits_augmented_law_query_to_schema_length() -> None:
         provider = OpenAIProvider("test-key", "test-model", "instructions")
         provider.generate("전입신고 " * 150, search_real_estate_law=search_law)
 
-    assert len(search_law.call_args.args[0]["query"]) == 500
+    arguments = search_law.call_args.args[0]
+    assert arguments["query"] == "대항력 발생 시점"
+    assert arguments["_user_question"] == "전입신고 " * 150
 
 
 def test_generate_does_not_call_law_search_for_property_request() -> None:
