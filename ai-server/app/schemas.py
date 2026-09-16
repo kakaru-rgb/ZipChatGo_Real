@@ -45,11 +45,32 @@ class AppState(BaseModel):
     filters: PropertyFilters | None = None
 
 
+class ConversationMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class RecentPropertySummary(BaseModel):
+    id: int = Field(ge=1)
+    title: str | None = Field(default=None, max_length=120)
+    sale_price: int | None = Field(default=None, ge=0)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+
+
+class RecentContext(BaseModel):
+    recent_property_ids: list[int] = Field(default_factory=list, max_length=10)
+    last_referenced_property_id: int | None = Field(default=None, ge=1)
+    recent_properties: list[RecentPropertySummary] = Field(default_factory=list, max_length=10)
+
+
 class ChatRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     message: str = Field(min_length=1, max_length=1000)
     app_state: AppState | None = None
+    history: list[ConversationMessage] = Field(default_factory=list, max_length=8)
+    recent_context: RecentContext = Field(default_factory=RecentContext)
 
 
 class MoveMapAction(BaseModel):
@@ -146,6 +167,7 @@ UiAction = Annotated[
 class ChatResponse(BaseModel):
     message: str
     actions: list[UiAction] = Field(default_factory=list)
+    recent_context: RecentContext = Field(default_factory=RecentContext)
 
 
 class PropertySearchArguments(BaseModel):

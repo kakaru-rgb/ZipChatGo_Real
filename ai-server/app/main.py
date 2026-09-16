@@ -105,12 +105,18 @@ def agent_chat(
         result = provider.generate(
             message=request.message,
             app_state=app_state,
+            history=[item.model_dump() for item in request.history],
+            recent_context=request.recent_context.model_dump(),
             search_properties=property_search.search,
             find_transit_station=transit_station.search,
             get_adjacent_legal_dongs=legal_dong_adjacency.lookup,
             search_real_estate_law=real_estate_law_search.search,
         )
-        return ChatResponse(message=result.message, actions=result.actions)
+        return ChatResponse(
+            message=result.message,
+            actions=result.actions,
+            recent_context=result.recent_context,
+        )
     except APIError as exception:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

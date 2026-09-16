@@ -2,15 +2,51 @@
   const panel = document.getElementById("aiAgentPanel");
   const launcher = document.getElementById("aiAgentLauncher");
   const closeButton = document.getElementById("aiAgentClose");
+  const resetButton = document.getElementById("aiAgentReset");
   const messages = document.getElementById("aiAgentMessages");
   const suggestions = document.getElementById("aiAgentSuggestions");
   const form = document.getElementById("aiAgentForm");
   const input = document.getElementById("aiAgentInput");
   const sendButton = document.getElementById("aiAgentSend");
 
-  if (!panel || !launcher || !closeButton || !messages || !form || !input || !sendButton) return;
+  if (!panel || !launcher || !closeButton || !resetButton || !messages || !form || !input || !sendButton) return;
 
   let waitingForResponse = false;
+  const HISTORY_MAX_MESSAGES = 8;
+  const HISTORY_MAX_CHARACTERS = 8000;
+  let conversationHistory = [];
+  let recentContext = {
+    recent_property_ids: [],
+    last_referenced_property_id: null,
+    recent_properties: []
+  };
+
+  function addHistoryMessage(role, content) {
+    const normalized = String(content || "").trim().slice(0, 4000);
+    if (!normalized) return;
+    conversationHistory.push({ role, content: normalized });
+    conversationHistory = conversationHistory.slice(-HISTORY_MAX_MESSAGES);
+    while (
+      conversationHistory.length > 1 &&
+      conversationHistory.reduce((total, item) => total + item.content.length, 0) > HISTORY_MAX_CHARACTERS
+    ) {
+      conversationHistory.shift();
+    }
+  }
+
+  function resetConversation() {
+    if (waitingForResponse) return;
+    conversationHistory = [];
+    recentContext = { recent_property_ids: [], last_referenced_property_id: null, recent_properties: [] };
+    messages.innerHTML = `
+      <article class="ai-agent-answer ai-agent-welcome">
+        <span class="ai-agent-brand-icon ai-agent-mark" data-ai-brand-icon aria-hidden="true"></span>
+        <p>새 대화를 시작했어요.</p>
+        <h2>어떤 집을 찾고 계신가요?</h2>
+      </article>`;
+    renderBrandIcons();
+    input.focus();
+  }
 
   function renderBrandIcons() {
     document.querySelectorAll("[data-ai-brand-icon]").forEach(icon => {
@@ -146,6 +182,7 @@
       button.type = "button";
       button.textContent = `매물 ${index + 1} 상세보기`;
       button.addEventListener("click", () => {
+        recentContext.last_referenced_property_id = Number(propertyId);
         window.zipchatgoMapActions?.execute?.([
           { type: "OPEN_PROPERTY", property_id: propertyId }
         ]);
@@ -174,7 +211,9 @@
         },
         body: JSON.stringify({
           message: text,
-          appState: getAppState()
+          appState: getAppState(),
+          history: conversationHistory,
+          recentContext
         })
       });
 
@@ -189,6 +228,22 @@
 
       const actions = Array.isArray(data.actions) ? data.actions : [];
       appendAgentAnswer(data.message, actions);
+      if (data.recent_context && typeof data.recent_context === "object") {
+        recentContext = {
+          recent_property_ids: Array.isArray(data.recent_context.recent_property_ids)
+            ? data.recent_context.recent_property_ids.map(Number).filter(Number.isInteger).slice(0, 10)
+            : [],
+          last_referenced_property_id: data.recent_context.last_referenced_property_id != null
+            && Number.isInteger(Number(data.recent_context.last_referenced_property_id))
+            ? Number(data.recent_context.last_referenced_property_id)
+            : null,
+          recent_properties: Array.isArray(data.recent_context.recent_properties)
+            ? data.recent_context.recent_properties.slice(0, 10)
+            : []
+        };
+      }
+      addHistoryMessage("user", text);
+      addHistoryMessage("assistant", data.message);
 
       try {
         await window.zipchatgoMapActions?.execute?.(actions);
@@ -220,6 +275,7 @@
 
   launcher.addEventListener("click", () => setPanelOpen(true));
   closeButton.addEventListener("click", () => setPanelOpen(false));
+  resetButton.addEventListener("click", resetConversation);
   input.addEventListener("input", syncInput);
   input.addEventListener("keydown", event => {
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {

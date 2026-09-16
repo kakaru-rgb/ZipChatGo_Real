@@ -6,8 +6,8 @@ import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.annotation.JsonNaming;
 
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-public record AiChatResponse(
-        String message,
-        List<AiUiAction> actions,
-        AiRecentContext recentContext) {
+public record AiRecentContext(
+        List<Long> recentPropertyIds,
+        Long lastReferencedPropertyId,
+        List<AiRecentPropertySummary> recentProperties) {
 }

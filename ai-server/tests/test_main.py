@@ -23,17 +23,23 @@ class FakeOpenAIProvider:
         self.app_state = None
         self.get_adjacent_legal_dongs = None
         self.search_real_estate_law = None
+        self.history = None
+        self.recent_context = None
 
     def generate(
         self,
         message: str,
         app_state=None,
+        history=None,
+        recent_context=None,
         search_properties=None,
         find_transit_station=None,
         get_adjacent_legal_dongs=None,
         search_real_estate_law=None,
     ) -> AgentReply:
         self.app_state = app_state
+        self.history = history
+        self.recent_context = recent_context
         self.get_adjacent_legal_dongs = get_adjacent_legal_dongs
         self.search_real_estate_law = search_real_estate_law
         return AgentReply(
@@ -96,6 +102,14 @@ def test_agent_chat_returns_provider_response() -> None:
                         "max_price": 800000000,
                     },
                 },
+                "history": [
+                    {"role": "user", "content": "분당 매물을 찾아줘"},
+                    {"role": "assistant", "content": "매물을 찾았습니다."},
+                ],
+                "recentContext": {
+                    "recent_property_ids": [101, 205],
+                    "last_referenced_property_id": 205,
+                },
             },
         )
     finally:
@@ -107,12 +121,19 @@ def test_agent_chat_returns_provider_response() -> None:
         "actions": [
             {"type": "HIGHLIGHT_PROPERTIES", "property_ids": [427]}
         ],
+        "recent_context": {
+            "recent_property_ids": [],
+            "last_referenced_property_id": None,
+            "recent_properties": [],
+        },
     }
     assert provider.app_state["selected_property_id"] == "427"
     assert provider.app_state["selected_region"]["code"] == "41135103"
     assert provider.app_state["current_legal_dong"]["name"] == "백현동"
     assert provider.app_state["current_region"] == "경기도 성남시 분당구 백현동"
     assert provider.app_state["filters"]["max_price"] == 800000000
+    assert provider.history[0]["content"] == "분당 매물을 찾아줘"
+    assert provider.recent_context["recent_property_ids"] == [101, 205]
     assert callable(provider.get_adjacent_legal_dongs)
     assert callable(provider.search_real_estate_law)
 
@@ -140,6 +161,8 @@ class FailingOpenAIProvider:
         self,
         message: str,
         app_state=None,
+        history=None,
+        recent_context=None,
         search_properties=None,
         find_transit_station=None,
         get_adjacent_legal_dongs=None,

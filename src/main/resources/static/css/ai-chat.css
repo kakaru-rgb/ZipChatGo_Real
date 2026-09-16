@@ -54,7 +54,8 @@
   line-height: 1.25;
 }
 
-.ai-agent-close {
+.ai-agent-close,
+.ai-agent-reset {
   width: 36px;
   height: 36px;
   display: grid;
@@ -68,7 +69,13 @@
   cursor: pointer;
 }
 
-.ai-agent-close:hover { background: #f1f5f9; }
+.ai-agent-close:hover,
+.ai-agent-reset:hover { background: #f1f5f9; }
+
+.ai-agent-reset {
+  justify-self: start;
+  font-size: 18px;
+}
 
 .ai-agent-messages {
   min-height: 0;

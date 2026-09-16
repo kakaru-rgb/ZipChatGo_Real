@@ -2,7 +2,7 @@ from unittest.mock import Mock, patch
 import json
 from types import SimpleNamespace
 
-from app.providers.openai_provider import AGENT_TOOLS, OpenAIProvider
+from app.providers.openai_provider import AGENT_TOOLS, OpenAIProvider, _bounded_history
 
 
 def test_generate_sends_instructions_separately_from_user_input() -> None:
@@ -21,6 +21,7 @@ def test_generate_sends_instructions_separately_from_user_input() -> None:
         model="test-model",
         instructions="공인중개사 상담 원칙",
         input="전세 계약에서 무엇을 확인해야 하나요?",
+        store=False,
     )
     assert result.message == "상담 답변"
     assert result.actions == []
@@ -49,6 +50,62 @@ def test_generate_sends_app_state_as_developer_context() -> None:
     assert input_items[1] == {"role": "user", "content": "현재 선택한 매물이 뭐야?"}
     assert result.message == "현재 지도 기준 상담 답변"
     assert result.actions == []
+
+
+def test_generate_includes_bounded_history_and_recent_context() -> None:
+    client = Mock()
+    client.responses.create.return_value.output_text = "두 번째 매물입니다."
+    history = [
+        {"role": "user", "content": "분당 매물 찾아줘"},
+        {"role": "assistant", "content": "매물 3건을 찾았습니다."},
+    ]
+
+    with patch("app.providers.openai_provider.OpenAI", return_value=client):
+        provider = OpenAIProvider("test-key", "test-model", "instructions")
+        result = provider.generate(
+            "그중 두 번째는?",
+            history=history,
+            recent_context={
+                "recent_property_ids": [101, 205, 333],
+                "last_referenced_property_id": None,
+            },
+        )
+
+    input_items = client.responses.create.call_args.kwargs["input"]
+    assert "[101,205,333]" in input_items[0]["content"]
+    assert input_items[1:3] == history
+    assert input_items[-1] == {"role": "user", "content": "그중 두 번째는?"}
+    assert client.responses.create.call_args.kwargs["store"] is False
+    assert result.recent_context.recent_property_ids == [101, 205, 333]
+
+
+def test_bounded_history_keeps_newest_messages_within_limits() -> None:
+    history = [
+        {"role": "user" if index % 2 == 0 else "assistant", "content": str(index) * 2000}
+        for index in range(12)
+    ]
+
+    bounded = _bounded_history(history)
+
+    assert len(bounded) <= 8
+    assert sum(len(item["content"]) for item in bounded) <= 8000
+    assert bounded[-1]["content"].startswith("11")
+
+
+def test_provider_does_not_retain_context_between_requests() -> None:
+    client = Mock()
+    client.responses.create.return_value.output_text = "답변"
+    with patch("app.providers.openai_provider.OpenAI", return_value=client):
+        provider = OpenAIProvider("test-key", "test-model", "instructions")
+        provider.generate(
+            "그 매물 알려줘",
+            history=[{"role": "assistant", "content": "매물 101입니다."}],
+            recent_context={"recent_property_ids": [101]},
+        )
+        provider.generate("새 사용자의 질문")
+
+    second_input = client.responses.create.call_args_list[1].kwargs["input"]
+    assert second_input == "새 사용자의 질문"
 
 
 def test_generate_executes_property_search_and_returns_final_answer() -> None:
@@ -110,6 +167,9 @@ def test_generate_executes_property_search_and_returns_final_answer() -> None:
         "HIGHLIGHT_PROPERTIES",
     ]
     assert result.actions[0].property_ids == [1, 2]
+    assert result.recent_context.recent_property_ids == [1, 2]
+    assert result.recent_context.last_referenced_property_id is None
+    assert [item.id for item in result.recent_context.recent_properties] == [1, 2]
 
 
 def test_generate_collects_only_actions_for_searched_properties() -> None:

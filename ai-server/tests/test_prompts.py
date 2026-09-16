@@ -21,7 +21,8 @@ def test_prompt_requires_property_search_tool_for_current_listings() -> None:
     assert "지도에 표시했다고 말하지 않습니다" in REAL_ESTATE_AGENT_INSTRUCTIONS
 
 
-def test_prompt_requires_grounded_law_answers() -> None:
-    assert "반드시 search_real_estate_law Tool을 사용" in REAL_ESTATE_AGENT_INSTRUCTIONS
-    assert "검색되지 않은 법령이나 조문을 만들지 않으며" in REAL_ESTATE_AGENT_INSTRUCTIONS
-    assert "판례나 행정해석을 확인한 것처럼 단정하지 않습니다" in REAL_ESTATE_AGENT_INSTRUCTIONS
+def test_prompt_uses_law_tool_when_official_grounding_is_needed() -> None:
+    assert "답변의 필수 조건은 아닙니다" in REAL_ESTATE_AGENT_INSTRUCTIONS
+    assert "search_real_estate_law를 우선 고려합니다" in REAL_ESTATE_AGENT_INSTRUCTIONS
+    assert "공식 citation은 실제 검색된 근거에만 연결합니다" in REAL_ESTATE_AGENT_INSTRUCTIONS
+    assert "최신 판례나 공식 해석이 실제로 판단한 것처럼 말하지 않습니다" in REAL_ESTATE_AGENT_INSTRUCTIONS
