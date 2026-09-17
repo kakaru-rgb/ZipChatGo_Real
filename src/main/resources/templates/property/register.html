@@ -295,6 +295,30 @@
           </div>
         </div>
 
+        <div class="field" id="ownershipDocField">
+          <label for="ownershipDoc">등기부등본</label>
+          <input type="file" id="ownershipDoc" data-doc-type="OWNERSHIP" accept=".pdf,.jpg,.jpeg,.png">
+          <p class="price-hint" data-doc-hint="ownershipDoc">선택한 파일이 없어요.</p>
+        </div>
+
+        <div class="field" id="buildingRegisterField">
+          <label for="buildingRegisterDoc">건축물대장</label>
+          <input type="file" id="buildingRegisterDoc" data-doc-type="BUILDING_REGISTER" accept=".pdf,.jpg,.jpeg,.png">
+          <p class="price-hint" data-doc-hint="buildingRegisterDoc">선택한 파일이 없어요.</p>
+        </div>
+
+        <div class="field" id="landRegisterField">
+          <label for="landRegisterDoc">토지대장</label>
+          <input type="file" id="landRegisterDoc" data-doc-type="LAND_REGISTER" accept=".pdf,.jpg,.jpeg,.png">
+          <p class="price-hint" data-doc-hint="landRegisterDoc">선택한 파일이 없어요.</p>
+        </div>
+
+        <div class="field" id="idCardField">
+          <label for="idCardDoc">신분증 <span class="optional-tag">준비 중</span></label>
+          <input type="file" id="idCardDoc" disabled>
+          <p class="price-hint">실시간 촬영 본인인증 기능은 추후 제공될 예정이에요.</p>
+        </div>
+
         <div class="agree-row">
           <input type="checkbox" id="ownerCheck">
           <label for="ownerCheck">본인이 소유자이거나 정당한 위임을 받았으며, 입력한 정보가 사실임을 확인합니다.</label>
@@ -758,7 +782,12 @@
 
   // ---------- 지오코딩 확정 처리 (주소 검색 선택 또는 '위치 확인' 클릭 시 공통 실행) ----------
   let currentTransitMatch = null;
+  let currentLat = null;
+  let currentLng = null;
   function applyGeocodedLocation(addr, lng, lat) {
+    currentLat = lat;
+    currentLng = lng;
+
     const mapPreview = document.getElementById('mapPreview');
     const mapStatusBadge = document.getElementById('mapStatusBadge');
     mapPreview.classList.add('located');
@@ -991,7 +1020,7 @@
     files.forEach(file => {
       const reader = new FileReader();
       reader.onload = (ev) => {
-        photos.push(ev.target.result);
+        photos.push({ file, src: ev.target.result });
         flyerPhotoIndex = photos.length - 1; // 방금 올린 사진을 바로 보여줘요
         renderThumbs();
       };
@@ -1001,11 +1030,11 @@
 
   function renderThumbs() {
     thumbGrid.innerHTML = '';
-    photos.forEach((src, i) => {
+    photos.forEach((p, i) => {
       const div = document.createElement('div');
       div.className = 'thumb' + (i === 0 ? ' main' : '');
       div.innerHTML = `
-        <img src="${src}" alt="매물 사진 ${i + 1}">
+        <img src="${p.src}" alt="매물 사진 ${i + 1}">
         ${i === 0 ? '<span class="main-tag">대표</span>' : ''}
         <button type="button" class="thumb-remove" data-index="${i}" aria-label="사진 삭제"><i class="fa-solid fa-xmark"></i></button>
       `;
@@ -1026,7 +1055,7 @@
     const hasPhotos = photos.length > 0;
     if (flyerPhotoIndex > photos.length - 1) flyerPhotoIndex = Math.max(0, photos.length - 1);
 
-    flyerPhoto.style.backgroundImage = hasPhotos ? `url(${photos[flyerPhotoIndex]})` : '';
+    flyerPhoto.style.backgroundImage = hasPhotos ? `url(${photos[flyerPhotoIndex].src})` : '';
     flyerPhoto.classList.toggle('has-photo', hasPhotos);
     flyerPhotoHint.style.display = hasPhotos ? 'none' : '';
 
@@ -1274,7 +1303,7 @@
   });
 
   // ---------- 제출 ----------
-  document.getElementById('listingForm').addEventListener('submit', (e) => {
+  document.getElementById('listingForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     if (current < steps.length) {
       alert('아직 입력하지 않은 정보가 있어요. 마지막 단계까지 입력을 완료해주세요.');
@@ -1284,7 +1313,117 @@
       alert('소유자 확인 동의가 필요해요.');
       return;
     }
-    alert('매물 등록 신청이 접수됐어요. 담당자 확인 후 24시간 이내 게시돼요.');
+    if (currentLat == null || currentLng == null) {
+      alert('주소를 검색해서 위치를 확인해주세요.');
+      return;
+    }
+
+    function getCheckedValues(containerId) {
+      return Array.from(document.querySelectorAll(`#${containerId} input[type="checkbox"]:checked`))
+        .map(el => el.value);
+    }
+
+    const dealType = document.querySelector('input[name="dealType"]:checked')?.value || '';
+    const priceVal = parseInt(document.getElementById('price').value, 10);
+    const depositVal = parseInt(document.getElementById('deposit').value, 10);
+    const monthlyVal = parseInt(document.getElementById('monthly').value, 10);
+
+    const payload = {
+      propertyType: document.querySelector('input[name="propertyType"]:checked')?.value || '',
+      dealType,
+      address1: document.getElementById('addr1').value,
+      address2: document.getElementById('addr2').value,
+      latitude: currentLat,
+      longitude: currentLng,
+      area: parseFloat(document.getElementById('area').value) || null,
+      floorInfo: document.getElementById('floor').value,
+      rooms: parseInt(document.getElementById('rooms').value, 10) || null,
+      baths: parseInt(document.getElementById('baths').value, 10) || null,
+      maintenanceFee: parseInt(document.getElementById('maintenanceFee').value, 10) || null,
+      etcFee: document.getElementById('etcFee').value,
+      tags: getCheckedValues('tagGrid'),
+      options: getCheckedValues('optionGrid'),
+      utilities: getCheckedValues('utilityGroup'),
+      transitInfo: currentTransitMatch ? JSON.stringify({
+        subway: currentTransitMatch.subway[0] ? currentTransitMatch.subway[0].name : null,
+        bus: currentTransitMatch.bus.slice(0, 3).map(b => b.name)
+      }) : null,
+      schoolInfo: currentSchoolMatch ? JSON.stringify({
+        elementary: currentSchoolMatch.el ? currentSchoolMatch.el.schools[0] : null,
+        middle: currentSchoolMatch.mid ? currentSchoolMatch.mid.schools[0] : null
+      }) : null,
+      price: dealType === '매매' ? (Number.isFinite(priceVal) ? priceVal : null) : null,
+      deposit: (dealType === '전세' || dealType === '월세') ? (Number.isFinite(depositVal) ? depositVal : null) : null,
+      monthly: dealType === '월세' ? (Number.isFinite(monthlyVal) ? monthlyVal : null) : null,
+      ownerName: document.getElementById('ownerName').value,
+      ownerPhone: document.getElementById('ownerPhone').value
+    };
+
+    submitBtn.disabled = true;
+    const originalBtnText = submitBtn.textContent;
+    submitBtn.textContent = '등록 중...';
+
+    try {
+      const res = await fetch('/api/properties', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(data.message || '매물 등록에 실패했어요.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalBtnText;
+        return;
+      }
+
+      const propertyId = data.propertyId;
+
+      // 첨부한 서류가 있으면 순서대로 업로드 (실패해도 등록 자체는 이미 완료된 상태라 계속 진행)
+      const docInputs = [
+        { id: 'ownershipDoc', type: 'OWNERSHIP' },
+        { id: 'buildingRegisterDoc', type: 'BUILDING_REGISTER' },
+        { id: 'landRegisterDoc', type: 'LAND_REGISTER' }
+      ];
+
+      for (const doc of docInputs) {
+        const input = document.getElementById(doc.id);
+        if (input && input.files && input.files[0]) {
+          const formData = new FormData();
+          formData.append('docType', doc.type);
+          formData.append('file', input.files[0]);
+          try {
+            await fetch(`/api/properties/${propertyId}/documents`, { method: 'POST', body: formData });
+          } catch (err) {
+            console.error('서류 업로드 실패:', doc.type, err);
+          }
+        }
+      }
+
+      // 사진 업로드 (STEP3에서 선택한 것들, 0번이 대표 사진)
+      for (let i = 0; i < photos.length; i++) {
+        const formData = new FormData();
+        formData.append('file', photos[i].file);
+        formData.append('sortOrder', String(i));
+        try {
+          await fetch(`/api/properties/${propertyId}/photos`, { method: 'POST', body: formData });
+        } catch (err) {
+          console.error('사진 업로드 실패:', i, err);
+        }
+      }
+
+      let message = '매물 등록 신청이 접수됐어요. 담당자 확인 후 24시간 이내 게시돼요.';
+      if (data.nameMismatch) {
+        message += '\n\n' + data.nameMismatchMessage;
+      }
+      alert(message);
+      window.location.href = '/';
+    } catch (err) {
+      alert('서버에 연결할 수 없어요. 잠시 후 다시 시도해주세요.');
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalBtnText;
+    }
   });
 
   updatePreview();
@@ -1331,6 +1470,18 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
   }
+</script>
+
+<!-- 서류 선택 시 파일명 표시 (기존 대형 스크립트와 독립적으로 동작) -->
+<script>
+  document.querySelectorAll('input[type="file"][data-doc-type]').forEach((input) => {
+    input.addEventListener('change', (e) => {
+      const hint = document.querySelector(`[data-doc-hint="${input.id}"]`);
+      if (!hint) return;
+      const file = e.target.files[0];
+      hint.textContent = file ? `선택됨: ${file.name}` : '선택한 파일이 없어요.';
+    });
+  });
 </script>
 </body>
 </html>

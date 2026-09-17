@@ -13,11 +13,14 @@ import org.springframework.web.servlet.HandlerInterceptor;
 public class AuthInterceptor implements HandlerInterceptor {
 
     private static final String SESSION_KEY = "loginMemberId";
+    private static final String GUEST_SESSION_KEY = "guest";
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         HttpSession session = request.getSession(false);
-        boolean loggedIn = session != null && session.getAttribute(SESSION_KEY) != null;
+        boolean loggedIn = session != null &&
+                (session.getAttribute(SESSION_KEY) != null
+                        || Boolean.TRUE.equals(session.getAttribute(GUEST_SESSION_KEY)));
 
         if (loggedIn) {
             return true;

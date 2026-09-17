@@ -121,7 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /* ---------- 상세 패널 ---------- */
-  function openDetail(item) {
+  async function openDetail(item) {
     const p = item.property;
 
     const attributes = p.attributes || [];
@@ -137,9 +137,8 @@ document.addEventListener('DOMContentLoaded', () => {
       item.registrantName.trim() !== p.ownerName.trim();
 
     detailContent.innerHTML = `
-      <div class="detail-photo-placeholder">
-        <i class="ti ti-photo"></i>
-        사진 준비 중
+      <div id="photoGallery" class="photo-gallery">
+        <p class="doc-loading">사진 불러오는 중...</p>
       </div>
 
       <div class="detail-title">${escapeHtml(p.propertyType || '')} · ${escapeHtml(p.dealType || '')}</div>
@@ -200,22 +199,112 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>` : ''}
       </div>
 
+      <div class="detail-section">
+        <h3>첨부 서류</h3>
+        <div id="docList" class="doc-list">
+          <p class="doc-loading">불러오는 중...</p>
+        </div>
+      </div>
+
       ${p.status === 'PENDING' ? `
       <div class="detail-actions">
         <button type="button" class="btn-reject-lg" id="detailRejectBtn">거절</button>
         <button type="button" class="btn-approve-lg" id="detailApproveBtn">승인</button>
       </div>` : ''}
+
+      <div class="detail-danger-zone">
+        <button type="button" class="btn-delete-lg" id="detailDeleteBtn">
+          <i class="ti ti-trash"></i> 매물 완전 삭제
+        </button>
+      </div>
     `;
 
     if (p.status === 'PENDING') {
       document.getElementById('detailApproveBtn').addEventListener('click', () => handleDecision(p.id, 'approve', true));
       document.getElementById('detailRejectBtn').addEventListener('click', () => handleDecision(p.id, 'reject', true));
     }
+    document.getElementById('detailDeleteBtn').addEventListener('click', () => handleDelete(p.id, item));
 
     detailPanel.classList.add('is-open');
     detailBackdrop.hidden = false;
     requestAnimationFrame(() => detailBackdrop.classList.add('is-visible'));
     detailPanel.setAttribute('aria-hidden', 'false');
+
+    loadDocuments(p.id);
+    loadPhotos(p.id);
+  }
+
+  async function loadPhotos(propertyId) {
+    const galleryEl = document.getElementById('photoGallery');
+    if (!galleryEl) return;
+
+    try {
+      const res = await fetch(`/api/admin/properties/${propertyId}/photos`);
+      const photos = await res.json();
+
+      if (!photos.length) {
+        galleryEl.innerHTML = `
+          <div class="detail-photo-placeholder">
+            <i class="ti ti-photo"></i>
+            등록된 사진이 없어요
+          </div>`;
+        return;
+      }
+
+      galleryEl.innerHTML = photos.map((photo, i) => `
+        <a href="${photo.signedUrl}" target="_blank" rel="noopener noreferrer" class="photo-thumb${i === 0 ? ' main' : ''}">
+          <img src="${photo.signedUrl}" alt="매물 사진 ${i + 1}" loading="lazy">
+          ${i === 0 ? '<span class="photo-main-tag">대표</span>' : ''}
+        </a>
+      `).join('');
+    } catch (err) {
+      galleryEl.innerHTML = '<p class="doc-loading">사진을 불러오지 못했어요.</p>';
+    }
+  }
+
+  const DOC_TYPE_LABELS = {
+    OWNERSHIP: '등기부등본',
+    BUILDING_REGISTER: '건축물대장',
+    LAND_REGISTER: '토지대장'
+  };
+  const REQUIRED_DOC_TYPES = ['OWNERSHIP', 'BUILDING_REGISTER', 'LAND_REGISTER'];
+
+  async function loadDocuments(propertyId) {
+    const docListEl = document.getElementById('docList');
+    if (!docListEl) return;
+
+    try {
+      const res = await fetch(`/api/admin/properties/${propertyId}/documents`);
+      const docs = await res.json();
+
+      const byType = {};
+      docs.forEach(d => { byType[d.docType] = d; });
+
+      docListEl.innerHTML = REQUIRED_DOC_TYPES.map(type => {
+        const doc = byType[type];
+        const label = DOC_TYPE_LABELS[type] || type;
+        if (doc && doc.signedUrl) {
+          return `
+            <div class="doc-row">
+              <span class="doc-row-label">${label}</span>
+              <a href="${doc.signedUrl}" target="_blank" rel="noopener noreferrer" class="doc-link">
+                <i class="ti ti-file-text"></i> ${escapeHtml(doc.originalName || '파일 보기')}
+              </a>
+            </div>`;
+        }
+        return `
+          <div class="doc-row">
+            <span class="doc-row-label">${label}</span>
+            <span class="doc-missing">미제출</span>
+          </div>`;
+      }).join('') + `
+        <div class="doc-row">
+          <span class="doc-row-label">신분증</span>
+          <span class="doc-missing">준비 중인 기능이에요</span>
+        </div>`;
+    } catch (err) {
+      docListEl.innerHTML = '<p class="doc-loading">서류를 불러오지 못했어요.</p>';
+    }
   }
 
   function closeDetail() {
@@ -247,6 +336,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  /* ---------- 삭제 처리 ---------- */
+  async function handleDelete(propertyId, item) {
+    const label = item?.property ? `${item.property.propertyType || ''} · ${item.property.address1 || ''}` : `매물 #${propertyId}`;
+    const confirmed = confirm(
+      `정말 이 매물을 삭제할까요?\n\n${label}\n\n첨부된 서류/사진 파일까지 전부 삭제되며, 되돌릴 수 없어요.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/admin/properties/${propertyId}`, { method: 'DELETE' });
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(data.message || '삭제 중 문제가 발생했어요.');
+        return;
+      }
+
+      closeDetail();
+      loadList(currentStatus);
+      refreshPendingCount();
+    } catch (err) {
+      alert('서버에 연결할 수 없어요.');
+    }
+  }
+
   /* ---------- 유틸 ---------- */
   function statusLabel(status) {
     if (status === 'PENDING') return '대기중';
@@ -256,10 +370,23 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function formatPrice(p) {
-    if (p.dealType === '매매') return p.price != null ? p.price + '만원' : '-';
-    if (p.dealType === '전세') return p.deposit != null ? '전세 ' + p.deposit + '만원' : '-';
-    if (p.dealType === '월세') return (p.deposit != null && p.monthly != null) ? `월세 ${p.deposit}/${p.monthly}` : '-';
+    if (p.dealType === '매매') return p.price != null ? formatKoreanWon(p.price) : '-';
+    if (p.dealType === '전세') return p.deposit != null ? '전세 ' + formatKoreanWon(p.deposit) : '-';
+    if (p.dealType === '월세') return (p.deposit != null && p.monthly != null)
+      ? `월세 ${formatKoreanWon(p.deposit)} / ${formatKoreanWon(p.monthly)}`
+      : '-';
     return '-';
+  }
+
+  // 만원 단위 숫자를 "12억 3,000만원" 같은 읽기 쉬운 형태로 변환
+  function formatKoreanWon(manwon) {
+    if (manwon == null || isNaN(manwon)) return '-';
+    const eok = Math.floor(manwon / 10000);
+    const remain = manwon % 10000;
+
+    if (eok > 0 && remain > 0) return `${eok}억 ${remain.toLocaleString()}만원`;
+    if (eok > 0) return `${eok}억원`;
+    return `${manwon.toLocaleString()}만원`;
   }
 
   function formatDate(value) {
