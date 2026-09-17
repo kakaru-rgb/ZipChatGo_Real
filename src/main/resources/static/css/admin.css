@@ -49,14 +49,14 @@ button {
   display: flex;
   align-items: center;
   gap: 16px;
-  height: 64px;
+  height: 96px;
   padding: 0 28px;
   background: var(--a-white);
   border-bottom: 1px solid var(--a-border);
 }
 
 .admin-logo img {
-  height: 32px;
+  height: 64px;
   display: block;
   object-fit: contain;
 }
@@ -319,7 +319,45 @@ button {
   padding: 28px 24px 40px;
 }
 
-.detail-photo-placeholder {
+.photo-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.photo-thumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 1 / 1;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--a-border);
+}
+
+.photo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.photo-thumb.main {
+  grid-column: span 3;
+  aspect-ratio: 4 / 3;
+}
+
+.photo-main-tag {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+}
   width: 100%;
   aspect-ratio: 4 / 3;
   border-radius: 12px;
@@ -412,6 +450,49 @@ button {
   margin-top: 1px;
 }
 
+.doc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.doc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--a-bg);
+  border: 1px solid var(--a-border);
+  font-size: 13.5px;
+}
+
+.doc-row-label {
+  font-weight: 600;
+  color: var(--a-text);
+}
+
+.doc-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--a-primary);
+  font-weight: 600;
+}
+
+.doc-link:hover {
+  text-decoration: underline;
+}
+
+.doc-missing {
+  color: var(--a-gray);
+}
+
+.doc-loading {
+  font-size: 13px;
+  color: var(--a-gray);
+}
+
 .detail-actions {
   display: flex;
   gap: 10px;
@@ -448,6 +529,31 @@ button {
 .detail-actions button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.detail-danger-zone {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--a-border);
+}
+
+.btn-delete-lg {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 11px;
+  border-radius: 10px;
+  border: 1px solid var(--a-rejected-bg);
+  background: var(--a-white);
+  color: var(--a-rejected);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.btn-delete-lg:hover {
+  background: var(--a-rejected-bg);
 }
 
 @media (max-width: 640px) {
