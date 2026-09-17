@@ -1,5 +1,6 @@
 import json
 import re
+from difflib import SequenceMatcher
 from typing import Any
 
 from openai import OpenAI
@@ -7,6 +8,7 @@ from pydantic import ValidationError
 
 from app.providers.llm_provider import AgentReply, ToolHandler
 from app.schemas import (
+    AddFavoriteAction,
     BUNDANG_LEGAL_DONG_NAME_VALUES,
     FitBoundsAction,
     HighlightPropertiesAction,
@@ -14,6 +16,7 @@ from app.schemas import (
     OpenPropertyAction,
     RecentContext,
     RecentPropertySummary,
+    RemoveFavoriteAction,
     SelectRegionAction,
     UiAction,
     ZoomMapAction,
@@ -46,8 +49,26 @@ SEARCH_PROPERTIES_TOOL = {
                 "minimum": 0,
                 "maximum": 100_000_000_000,
             },
+            "limit": {
+                "type": ["integer", "null"],
+                "description": "Maximum number of properties to return. Use the user's explicit count.",
+                "minimum": 1,
+                "maximum": 20,
+            },
+            "sort_by": {
+                "type": ["string", "null"],
+                "enum": ["sale_price", None],
+                "description": "Use sale_price for cheapest or most expensive requests.",
+            },
+            "sort_order": {
+                "type": ["string", "null"],
+                "enum": ["asc", "desc", None],
+                "description": "Use asc for cheapest and desc for most expensive requests.",
+            },
         },
-        "required": ["keyword", "property_type", "max_price"],
+        "required": [
+            "keyword", "property_type", "max_price", "limit", "sort_by", "sort_order"
+        ],
         "additionalProperties": False,
     },
     "strict": True,
@@ -73,6 +94,30 @@ GET_PROPERTIES_BY_IDS_TOOL = {
                 "items": {"type": "integer", "minimum": 1},
                 "minItems": 1,
                 "maxItems": 50,
+            }
+        },
+        "required": ["property_ids"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+SET_PRESENTED_PROPERTIES_TOOL = {
+    "type": "function",
+    "name": "set_presented_properties",
+    "description": (
+        "Records the exact property IDs that the next answer will visibly present, in the same "
+        "order. Use only after a property lookup. Include only IDs from that lookup, and pass an "
+        "empty list when no property matches. This updates conversation reference context and "
+        "does not perform a frontend action."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "property_ids": {
+                "type": "array",
+                "items": {"type": "integer", "minimum": 1},
+                "maxItems": 10,
             }
         },
         "required": ["property_ids"],
@@ -231,6 +276,71 @@ OPEN_PROPERTY_TOOL = {
     "strict": True,
 }
 
+ADD_FAVORITES_TOOL = {
+    "type": "function",
+    "name": "add_favorites",
+    "description": (
+        "Adds one or more clearly identified properties to the browser session's favorite list. "
+        "Resolve singular and plural natural-language references from selected_property_id, "
+        "recent_property_ids, or properties returned by a search tool. Do not guess IDs."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "property_ids": {
+                "type": "array",
+                "items": {"type": "integer", "minimum": 1},
+                "minItems": 1,
+                "maxItems": 10,
+            }
+        },
+        "required": ["property_ids"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+REMOVE_FAVORITES_TOOL = {
+    "type": "function",
+    "name": "remove_favorites",
+    "description": (
+        "Removes one or more clearly identified properties from the browser session's favorite "
+        "list. Resolve singular and plural natural-language references from selected_property_id, "
+        "recent_property_ids, or a favorite-property lookup. Do not guess IDs."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "property_ids": {
+                "type": "array",
+                "items": {"type": "integer", "minimum": 1},
+                "minItems": 1,
+                "maxItems": 10,
+            }
+        },
+        "required": ["property_ids"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+CLEAR_FAVORITES_TOOL = {
+    "type": "function",
+    "name": "clear_favorites",
+    "description": (
+        "Removes every property from the current browser session's favorite list. Use only when "
+        "the user clearly asks to empty, clear, or delete the entire favorite list. Do not use "
+        "for one named property or for a compound request that also adds properties."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
 SELECT_REGION_TOOL = {
     "type": "function",
     "name": "select_region",
@@ -278,6 +388,7 @@ GET_ADJACENT_LEGAL_DONGS_TOOL = {
 AGENT_TOOLS = [
     SEARCH_PROPERTIES_TOOL,
     GET_PROPERTIES_BY_IDS_TOOL,
+    SET_PRESENTED_PROPERTIES_TOOL,
     SEARCH_REAL_ESTATE_LAW_TOOL,
     FIND_TRANSIT_STATION_TOOL,
     MOVE_MAP_TOOL,
@@ -285,6 +396,9 @@ AGENT_TOOLS = [
     FIT_BOUNDS_TOOL,
     HIGHLIGHT_PROPERTIES_TOOL,
     OPEN_PROPERTY_TOOL,
+    ADD_FAVORITES_TOOL,
+    REMOVE_FAVORITES_TOOL,
+    CLEAR_FAVORITES_TOOL,
     SELECT_REGION_TOOL,
     GET_ADJACENT_LEGAL_DONGS_TOOL,
 ]
@@ -292,6 +406,10 @@ AGENT_TOOLS = [
 UI_ACTION_INSTRUCTIONS = """
 For questions about the current favorite-property list, its prices, areas, locations, details, or comparison, call get_properties_by_ids with the favorite_property_ids from App State. If that list is empty, explain that this session has no favorites without calling the tool. Never invent or add IDs. For a general regional property search, continue to use search_properties. When the user explicitly asks to show favorites on the map, reuse fit_bounds and highlight_properties with the properties returned by get_properties_by_ids.
 Match the favorite-property answer detail to the question. For a count question, answer only the count from favorite_property_ids and do not call get_properties_by_ids or print property details. For a simple list question, list only property names or the minimum identifying information; omit price, area, and full address unless requested. For a detail question, provide the requested details. For a comparison question, state the result and only the fields needed for that comparison; do not dump every field of every favorite.
+Use add_favorites or remove_favorites only when the user explicitly asks to change the favorite list. Interpret singular or plural references from App State, recent_property_ids, and tool results. Preserve distinct property IDs even when their names are identical. If the referenced IDs are not clear from that context, ask the user instead of guessing. Favorite-list questions such as showing, counting, or comparing are reads and must never produce favorite mutation actions.
+Use clear_favorites when the user clearly asks to remove the entire favorite list, regardless of their exact wording. Never interpret a whole-list request as an apartment name. Do not use clear_favorites for a compound request that also asks to add properties; ask the user to split that request.
+After listing favorites, expressions such as '여기서 2번', '그중 두 번째', or '목록에서 2번' refer to the displayed order in recent_property_ids, not to literal property ID 2. Use the corresponding actual property ID. If the requested position is outside the displayed list, ask the user to choose a valid item and emit no action.
+After get_properties_by_ids, call set_presented_properties before answering. Pass exactly the IDs that the answer will visibly present, in the same order. If a filter has no matches, pass an empty list. Never pass all fetched favorites when the answer presents only a subset.
 사용자가 매물을 찾아 지도에 보여 달라고 하면 search_properties를 먼저 호출하세요.
 현재 App State에 selected_region이 있고 사용자가 '여기', '이 동', '선택한 지역'을 말하면
 selected_region의 법정동을 현재 지도 bounds보다 우선해서 사용하세요.
@@ -369,18 +487,245 @@ def _bounded_history(history: list[dict[str, str]]) -> list[dict[str, str]]:
     return list(reversed(kept_reversed))
 
 
-def _resolve_recent_property_reference(message: str, context: RecentContext) -> int | None:
-    if not context.recent_property_ids:
-        return context.last_referenced_property_id
-    ordinal_words = {"첫 번째": 0, "첫번째": 0, "두 번째": 1, "두번째": 1, "세 번째": 2, "세번째": 2}
+def _property_search_ranking(message: str) -> tuple[int | None, str | None, str | None]:
+    count_match = re.search(r"(?<!\d)(\d{1,2})\s*개(?:만)?", message)
+    limit = min(int(count_match.group(1)), 20) if count_match else None
+    compact = re.sub(r"\s+", "", message)
+    if any(phrase in compact for phrase in ("가장싼", "제일싼", "가장저렴한", "최저가")):
+        return limit, "sale_price", "asc"
+    if any(phrase in compact for phrase in ("가장비싼", "제일비싼", "최고가")):
+        return limit, "sale_price", "desc"
+    return limit, None, None
+
+
+def _positive_property_id(value: Any) -> int | None:
+    if not str(value or "").isdigit():
+        return None
+    property_id = int(value)
+    return property_id if property_id > 0 else None
+
+
+def _selected_property_state(
+    app_state: dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, int | None, bool]:
+    if not app_state:
+        return None, None, False
+    raw_summary = app_state.get("selected_property")
+    summary = raw_summary if isinstance(raw_summary, dict) else None
+    summary_id = _positive_property_id(summary.get("id")) if summary else None
+    legacy_id = _positive_property_id(app_state.get("selected_property_id"))
+    mismatched = summary_id is not None and legacy_id is not None and summary_id != legacy_id
+    return summary, None if mismatched else (summary_id or legacy_id), mismatched
+
+
+def _is_selected_property_question(message: str) -> bool:
+    compact = re.sub(r"\s+", "", message)
+    has_selected_reference = any(
+        phrase in compact
+        for phrase in ("선택한매물", "선택한아파트", "선택된매물", "선택된아파트")
+    )
+    asks_for_information = any(
+        phrase in compact
+        for phrase in ("뭐", "무엇", "어떤", "알려", "정보", "가격", "주소")
+    )
+    return has_selected_reference and asks_for_information
+
+
+def _selected_property_reply(
+    summary: dict[str, Any] | None,
+    property_id: int | None,
+    mismatched: bool,
+    context: RecentContext,
+) -> AgentReply:
+    if mismatched:
+        return AgentReply(
+            message="현재 선택 매물의 상태가 일치하지 않습니다. 매물을 다시 선택해 주세요.",
+            recent_context=context,
+        )
+    if property_id is None:
+        return AgentReply(message="현재 선택된 매물이 없습니다.", recent_context=context)
+    if not summary:
+        return AgentReply(
+            message=f"현재 선택된 매물은 매물번호 {property_id}입니다.",
+            recent_context=context,
+        )
+
+    name = summary.get("title") or summary.get("building_name") or "이름 정보 없음"
+    details = [f"현재 선택된 매물은 {name}입니다.", f"매물번호는 {property_id}입니다."]
+    if summary.get("sale_price") is not None:
+        details.append(f"매매가는 {int(summary['sale_price']):,}원입니다.")
+    if summary.get("address"):
+        details.append(f"주소는 {summary['address']}입니다.")
+    return AgentReply(message=" ".join(details), recent_context=context)
+
+
+def _normalize_property_name(value: str) -> str:
+    return re.sub(r"[^0-9a-z가-힣]+", "", value.lower())
+
+
+def _favorite_name_query(message: str) -> str | None:
+    candidate = message
+    removable_phrases = (
+        "관심매물 중에서",
+        "관심 매물 중에서",
+        "관심목록 중에서",
+        "관심 목록 중에서",
+        "관심매물 중",
+        "관심 매물 중",
+        "관심목록 중",
+        "관심 목록 중",
+        "관심매물에서",
+        "관심 매물에서",
+        "관심목록에서",
+        "관심 목록에서",
+        "관심매물",
+        "관심 매물",
+        "관심목록",
+        "관심 목록",
+        "찜 해제해줘",
+        "찜해제해줘",
+        "찜 취소해줘",
+        "찜취소해줘",
+        "삭제해줘",
+        "지워줘",
+        "빼줘",
+    )
+    for phrase in removable_phrases:
+        candidate = candidate.replace(phrase, " ")
+    candidate = re.sub(r"^\s*내\s+", "", candidate)
+    candidate = re.sub(r"\s*(?:을|를|은|는|이|가)\s*$", "", candidate).strip()
+    normalized = _normalize_property_name(candidate)
+    if normalized in {
+        "",
+        "이매물",
+        "그매물",
+        "해당매물",
+        "이것",
+        "그것",
+        "이거",
+        "이걸",
+        "그거",
+        "그걸",
+        "저거",
+        "저걸",
+        "여기",
+    }:
+        return None
+    return candidate if len(normalized) >= 2 else None
+
+
+def _favorite_name_matches(
+    query: str,
+    properties: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    normalized_query = _normalize_property_name(query)
+    scored: list[tuple[float, dict[str, Any]]] = []
+    for item in properties:
+        property_name = str(item.get("building_name") or item.get("title") or "").strip()
+        normalized_name = _normalize_property_name(property_name)
+        if not normalized_name or not str(item.get("id", "")).isdigit():
+            continue
+        if normalized_query == normalized_name:
+            score = 1.0
+        elif normalized_query in normalized_name or normalized_name in normalized_query:
+            score = 0.9
+        else:
+            score = SequenceMatcher(None, normalized_query, normalized_name).ratio()
+        scored.append((score, item))
+
+    if not scored:
+        return []
+    best_score = max(score for score, _ in scored)
+    if best_score < 0.58:
+        return []
+    return [item for score, item in scored if best_score - score <= 0.025]
+
+
+def _favorite_candidate_reply(
+    query: str,
+    properties: list[dict[str, Any]],
+) -> AgentReply:
+    lines = [
+        f"'{query}'와 이름이 비슷한 관심매물이 여러 개 있습니다. 삭제할 매물을 선택해 주세요."
+    ]
+    for index, item in enumerate(properties, start=1):
+        property_id = int(item["id"])
+        name = str(item.get("building_name") or item.get("title") or f"매물 {property_id}")
+        details = [f"매물 ID {property_id}"]
+        if item.get("sale_price") is not None:
+            details.append(f"{int(item['sale_price']):,}원")
+        if item.get("address"):
+            details.append(str(item["address"]))
+        lines.append(f"{index}. {name} ({' · '.join(details)})")
+
+    recent_items = properties[:10]
+    return AgentReply(
+        message="\n".join(lines),
+        recent_context=RecentContext(
+            recent_property_ids=[int(item["id"]) for item in recent_items],
+            recent_properties=[
+                RecentPropertySummary(
+                    id=int(item["id"]),
+                    title=(item.get("title") or item.get("building_name") or None),
+                    sale_price=item.get("sale_price"),
+                    latitude=item.get("latitude"),
+                    longitude=item.get("longitude"),
+                )
+                for item in recent_items
+            ],
+        ),
+    )
+
+
+def _explicit_property_id(message: str) -> int | None:
+    match = re.search(r"(?<!\d)(\d+)\s*번(?:\s*매물)?", message)
+    if not match:
+        return None
+    property_id = int(match.group(1))
+    return property_id if property_id > 0 else None
+
+
+def _listed_property_reference(
+    message: str,
+    context: RecentContext,
+) -> tuple[bool, int | None]:
+    ordinal_words = {
+        "첫 번째": 0,
+        "첫번째": 0,
+        "두 번째": 1,
+        "두번째": 1,
+        "세 번째": 2,
+        "세번째": 2,
+    }
     for word, index in ordinal_words.items():
-        if word in message and index < len(context.recent_property_ids):
-            return context.recent_property_ids[index]
-    if "가장 싼" in message or "제일 싼" in message or "최저가" in message:
-        priced = [item for item in context.recent_properties if item.sale_price is not None]
-        if priced:
-            return min(priced, key=lambda item: item.sale_price).id
-    return context.last_referenced_property_id
+        if word in message:
+            return True, (
+                context.recent_property_ids[index]
+                if index < len(context.recent_property_ids)
+                else None
+            )
+
+    match = re.search(r"(?<!\d)(\d+)\s*번", message)
+    if not match:
+        return False, None
+
+    position = int(match.group(1))
+    has_list_reference = any(
+        phrase in message
+        for phrase in (
+            "여기서", "여기에서", "그중", "그 중", "목록에서",
+            "관심매물에서", "관심 매물에서",
+        )
+    )
+    if has_list_reference and not context.recent_property_ids:
+        return True, None
+    if not context.recent_property_ids:
+        return False, None
+    if not has_list_reference and position > len(context.recent_property_ids):
+        return False, None
+    if position < 1 or position > len(context.recent_property_ids):
+        return True, None
+    return True, context.recent_property_ids[position - 1]
 
 
 class OpenAIProvider:
@@ -403,7 +748,18 @@ class OpenAIProvider:
     ) -> AgentReply:
         history_items = _bounded_history(history or [])
         context = RecentContext.model_validate(recent_context or {})
-        context.last_referenced_property_id = _resolve_recent_property_reference(message, context)
+        (
+            selected_property_summary,
+            selected_property_id,
+            selected_property_state_mismatch,
+        ) = _selected_property_state(app_state)
+        if _is_selected_property_question(message):
+            return _selected_property_reply(
+                selected_property_summary,
+                selected_property_id,
+                selected_property_state_mismatch,
+                context,
+            )
         context_items: list[dict[str, str]] = []
         if app_state is not None:
             state_json = json.dumps(app_state, ensure_ascii=False, separators=(",", ":"))
@@ -457,6 +813,8 @@ class OpenAIProvider:
         actions: list[UiAction] = []
         searched_properties: list[dict[str, Any]] = []
         favorite_properties: list[dict[str, Any]] = []
+        favorite_lookup_completed = False
+        presented_property_context_recorded = False
         searched_stations: list[dict[str, Any]] = []
         law_search_attempted = False
         law_search_results: list[dict[str, Any]] = []
@@ -466,30 +824,42 @@ class OpenAIProvider:
             message,
             app_state,
         )
-        favorite_scope_requested = any(
+        favorite_mentioned = any(
             phrase in message
-            for phrase in ("관심매물", "관심 매물", "찜한 것", "찜한 매물", "찜해둔")
+            for phrase in (
+                "관심매물", "관심 매물", "관심목록", "관심 목록",
+                "찜한 것", "찜한 매물", "찜해둔",
+            )
         )
-        favorite_count_requested = favorite_scope_requested and any(
+        favorite_count_requested = favorite_mentioned and any(
             phrase in message
             for phrase in ("몇 개", "몇개", "개수", "몇 건", "몇건")
         )
-        favorite_property_ids = {
+        favorite_scope_requested = favorite_count_requested
+        favorite_property_id_list = list(dict.fromkeys(
             int(value)
             for value in (app_state.get("favorite_property_ids", []) if app_state else [])
             if str(value).isdigit() and int(value) > 0
-        }
-        favorite_fallback_requested = (
-            "없으면" in message
-            and any(phrase in message for phrase in ("찾아", "검색", "추천"))
-        )
+        ))
+        favorite_property_ids = set(favorite_property_id_list)
+        search_limit, search_sort_by, search_sort_order = _property_search_ranking(message)
         excluded_tool_names: set[str] = set()
-        if search_properties is None or (
-            favorite_scope_requested and not favorite_fallback_requested
-        ):
+        if search_properties is None:
             excluded_tool_names.add("search_properties")
-        if get_properties_by_ids is None or favorite_count_requested:
+        if (
+            get_properties_by_ids is None
+            or favorite_count_requested
+            or not favorite_property_ids
+        ):
             excluded_tool_names.add("get_properties_by_ids")
+        if (
+            favorite_count_requested
+            or get_properties_by_ids is None
+            or not favorite_property_ids
+        ):
+            excluded_tool_names.add("set_presented_properties")
+        if not favorite_property_ids:
+            excluded_tool_names.add("clear_favorites")
         if not station_search_allowed or find_transit_station is None:
             excluded_tool_names.add("find_transit_station")
         if get_adjacent_legal_dongs is None:
@@ -529,12 +899,11 @@ class OpenAIProvider:
                 "묻는 질문입니다. 추측하지 말고 get_adjacent_legal_dongs 결과에 포함된 "
                 "법정동만 답변하세요."
             )
-        allowed_property_ids = {
-            int(app_state["selected_property_id"])
-            for _ in [0]
-            if app_state
-            and str(app_state.get("selected_property_id", "")).isdigit()
-        }
+        allowed_property_ids = (
+            {selected_property_id}
+            if selected_property_id is not None
+            else set()
+        )
         favorite_map_requested = "지도" in message
         if favorite_scope_requested:
             allowed_property_ids.clear()
@@ -615,6 +984,11 @@ class OpenAIProvider:
                 post_tool_instruction = None
                 if function_call.name == "search_properties" and search_properties:
                     arguments = json.loads(function_call.arguments)
+                    if search_limit is not None:
+                        arguments["limit"] = search_limit
+                    if search_sort_by is not None:
+                        arguments["sort_by"] = search_sort_by
+                        arguments["sort_order"] = search_sort_order
                     selected_region = app_state.get("selected_region") if app_state else None
                     if not arguments.get("keyword") and isinstance(selected_region, dict):
                         legal_dong_code = selected_region.get("code")
@@ -659,31 +1033,126 @@ class OpenAIProvider:
                     and get_properties_by_ids
                 ):
                     arguments = json.loads(function_call.arguments)
-                    requested_ids = list(dict.fromkeys(
-                        int(value)
-                        for value in arguments.get("property_ids", [])
-                        if str(value).isdigit() and int(value) > 0
-                    ))
-                    requested_id_set = set(requested_ids)
                     if not favorite_property_ids:
                         result = {
                             "status": "rejected",
                             "reason": "The current session has no favorite properties.",
                         }
-                    elif not requested_ids or not requested_id_set.issubset(favorite_property_ids):
-                        result = {
-                            "status": "rejected",
-                            "reason": "Only favorite_property_ids from App State may be queried.",
-                        }
                     else:
-                        arguments["property_ids"] = requested_ids
+                        arguments["property_ids"] = favorite_property_id_list
                         result = get_properties_by_ids(arguments)
                         favorite_properties = result.get("properties", [])
+                        favorite_lookup_completed = True
+                        next_recent_property_ids = []
+                        next_recent_properties = []
+                        last_referenced_property_id = None
                         allowed_property_ids.update(
                             int(item["id"])
                             for item in favorite_properties
                             if str(item.get("id", "")).isdigit()
                         )
+                elif function_call.name == "set_presented_properties":
+                    arguments = json.loads(function_call.arguments)
+                    raw_ids = arguments.get("property_ids", [])
+                    presented_ids = list(dict.fromkeys(
+                        int(value)
+                        for value in raw_ids
+                        if str(value).isdigit() and int(value) > 0
+                    )) if isinstance(raw_ids, list) else []
+                    fetched_by_id = {
+                        int(item["id"]): item
+                        for item in favorite_properties
+                        if str(item.get("id", "")).isdigit()
+                    }
+                    if (
+                        not favorite_lookup_completed
+                        or len(presented_ids) != len(raw_ids)
+                        or not set(presented_ids).issubset(fetched_by_id)
+                    ):
+                        result = {
+                            "status": "rejected",
+                            "reason": "Presented properties must be an ordered subset of the latest lookup.",
+                        }
+                    else:
+                        next_recent_property_ids = presented_ids[:10]
+                        next_recent_properties = [
+                            RecentPropertySummary(
+                                id=property_id,
+                                title=(
+                                    fetched_by_id[property_id].get("title")
+                                    or fetched_by_id[property_id].get("building_name")
+                                    or None
+                                ),
+                                sale_price=fetched_by_id[property_id].get("sale_price"),
+                                latitude=fetched_by_id[property_id].get("latitude"),
+                                longitude=fetched_by_id[property_id].get("longitude"),
+                            )
+                            for property_id in next_recent_property_ids
+                        ]
+                        last_referenced_property_id = (
+                            next_recent_property_ids[0]
+                            if len(next_recent_property_ids) == 1
+                            else None
+                        )
+                        presented_property_context_recorded = True
+                        result = {"status": "accepted"}
+                elif function_call.name in {"add_favorites", "remove_favorites"}:
+                    arguments = json.loads(function_call.arguments)
+                    raw_ids = arguments.get("property_ids", [])
+                    property_ids = list(dict.fromkeys(
+                        int(value)
+                        for value in raw_ids
+                        if str(value).isdigit() and int(value) > 0
+                    )) if isinstance(raw_ids, list) else []
+                    if (
+                        not property_ids
+                        or len(property_ids) != len(raw_ids)
+                        or not set(property_ids).issubset(allowed_property_ids)
+                    ):
+                        result = {
+                            "status": "rejected",
+                            "reason": (
+                                "Favorite property IDs must be an ordered subset of the current "
+                                "selected property, recent properties, or latest tool results."
+                            ),
+                        }
+                    else:
+                        adding = function_call.name == "add_favorites"
+                        changed_ids = [
+                            property_id
+                            for property_id in property_ids
+                            if (property_id not in favorite_property_ids) == adding
+                        ]
+                        unchanged_ids = [
+                            property_id
+                            for property_id in property_ids
+                            if property_id not in changed_ids
+                        ]
+                        action_type = AddFavoriteAction if adding else RemoveFavoriteAction
+                        for property_id in changed_ids:
+                            action = action_type(property_id=property_id)
+                            if action not in actions:
+                                actions.append(action)
+                        result = {
+                            "status": "accepted",
+                            "changed_ids": changed_ids,
+                            "unchanged_ids": unchanged_ids,
+                        }
+                elif function_call.name == "clear_favorites":
+                    if not favorite_property_id_list:
+                        result = {
+                            "status": "rejected",
+                            "reason": "The current session has no favorite properties.",
+                        }
+                    else:
+                        for property_id in favorite_property_id_list:
+                            action = RemoveFavoriteAction(property_id=property_id)
+                            if action not in actions:
+                                actions.append(action)
+                        result = {
+                            "status": "accepted",
+                            "removed_count": len(favorite_property_id_list),
+                        }
                 elif function_call.name == "find_transit_station" and find_transit_station:
                     arguments = json.loads(function_call.arguments)
                     query = arguments.get("query")
@@ -955,7 +1424,11 @@ def _parse_ui_action(
             return ZoomMapAction(**arguments)
         if name == "select_region":
             return SelectRegionAction(**arguments)
-        if name == "fit_bounds":
+        if name == "add_favorite":
+            action = AddFavoriteAction(**arguments)
+        elif name == "remove_favorite":
+            action = RemoveFavoriteAction(**arguments)
+        elif name == "fit_bounds":
             action = FitBoundsAction(**arguments)
         elif name == "highlight_properties":
             action = HighlightPropertiesAction(**arguments)
@@ -968,7 +1441,7 @@ def _parse_ui_action(
 
     referenced_ids = (
         {action.property_id}
-        if isinstance(action, OpenPropertyAction)
+        if isinstance(action, (OpenPropertyAction, AddFavoriteAction, RemoveFavoriteAction))
         else set(action.property_ids)
     )
     return action if referenced_ids.issubset(allowed_property_ids) else None

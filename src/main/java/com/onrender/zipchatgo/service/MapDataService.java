@@ -6,6 +6,7 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -134,6 +135,19 @@ public class MapDataService {
             String legalDongCode,
             int limit,
             GeoBounds bounds) {
+        return searchProperties(
+                keyword, propertyType, maxPrice, legalDongCode, limit, bounds, null, null);
+    }
+
+    public PropertySearchResult searchProperties(
+            String keyword,
+            String propertyType,
+            Long maxPrice,
+            String legalDongCode,
+            int limit,
+            GeoBounds bounds,
+            String sortBy,
+            String sortOrder) {
         MapDataResult allProperties = getProperties();
         String normalizedKeyword = normalize(keyword);
         String stationKeyword = normalizedKeyword.endsWith("역") && normalizedKeyword.length() > 1
@@ -154,6 +168,14 @@ public class MapDataService {
                         coordinateOf(property, "latitude"),
                         coordinateOf(property, "longitude")))
                 .toList();
+
+        if ("sale_price".equals(sortBy)) {
+            Comparator<Map<String, Object>> comparator = Comparator.comparingLong(this::priceOf);
+            if ("desc".equals(sortOrder)) {
+                comparator = comparator.reversed();
+            }
+            matches = matches.stream().sorted(comparator).toList();
+        }
 
         List<Map<String, Object>> summaries = matches.stream()
                 .limit(limit)

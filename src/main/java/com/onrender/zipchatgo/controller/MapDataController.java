@@ -47,6 +47,8 @@ public class MapDataController {
             @RequestParam(required = false) Double west,
             @RequestParam(required = false) Double north,
             @RequestParam(required = false) Double east,
+            @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false) String sortOrder,
             @RequestParam(defaultValue = "10") int limit) {
         if (maxPrice != null && maxPrice < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "maxPrice must be zero or greater");
@@ -57,10 +59,16 @@ public class MapDataController {
         if (legalDongCode != null && !legalDongCode.matches("\\d{8}")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "legalDongCode must be 8 digits");
         }
+        if (sortBy != null && !"sale_price".equals(sortBy)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "sortBy must be sale_price");
+        }
+        if (sortOrder != null && !sortOrder.matches("asc|desc")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "sortOrder must be asc or desc");
+        }
         GeoBounds bounds = createBounds(south, west, north, east);
 
         PropertySearchResult result = mapDataService.searchProperties(
-                keyword, propertyType, maxPrice, legalDongCode, limit, bounds);
+                keyword, propertyType, maxPrice, legalDongCode, limit, bounds, sortBy, sortOrder);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("total_count", result.totalCount());
         body.put("properties", result.properties());

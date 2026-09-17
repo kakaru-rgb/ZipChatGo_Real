@@ -98,6 +98,14 @@ def test_agent_chat_returns_provider_response() -> None:
                         },
                     },
                     "selected_property_id": "427",
+                    "selected_property": {
+                        "id": "427",
+                        "title": "정자동 테스트 매물",
+                        "building_name": "정든마을 테스트단지",
+                        "property_type": "아파트",
+                        "sale_price": 780000000,
+                        "address": "경기도 성남시 분당구 정자동 1",
+                    },
                     "favorite_property_ids": ["182", "427"],
                     "filters": {
                         "keyword": "정자동",
@@ -131,6 +139,8 @@ def test_agent_chat_returns_provider_response() -> None:
         },
     }
     assert provider.app_state["selected_property_id"] == "427"
+    assert provider.app_state["selected_property"]["building_name"] == "정든마을 테스트단지"
+    assert provider.app_state["selected_property"]["sale_price"] == 780000000
     assert provider.app_state["selected_region"]["code"] == "41135103"
     assert provider.app_state["current_legal_dong"]["name"] == "백현동"
     assert provider.app_state["current_region"] == "경기도 성남시 분당구 백현동"

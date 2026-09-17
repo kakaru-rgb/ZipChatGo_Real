@@ -191,6 +191,16 @@ function getAiAppState() {
       bounds: selectedLegalDong.bounds
     } : null,
     selected_property_id: selectedProperty?.id != null ? String(selectedProperty.id) : null,
+    selected_property: selectedProperty ? {
+      id: String(selectedProperty.id),
+      title: selectedProperty.title || null,
+      building_name: selectedProperty.building_name || null,
+      property_type: selectedProperty.property_type || null,
+      sale_price: Number.isFinite(Number(selectedProperty.sale_price))
+        ? Number(selectedProperty.sale_price)
+        : null,
+      address: selectedProperty.address || null
+    } : null,
     favorite_property_ids: Array.from(favoritePropertyIds, String),
     filters: {
       keyword: document.getElementById("searchInput")?.value.trim() || null,
@@ -1502,9 +1512,27 @@ function renderPropertyMarkerContent(item, highlighted = false) {
 async function executeAiMapActions(actions) {
   if (!Array.isArray(actions)) return;
 
+  const mapActions = actions.filter(action => {
+    if (!action || !["ADD_FAVORITE", "REMOVE_FAVORITE"].includes(action.type)) return true;
+
+    const propertyId = String(action.property_id || "");
+    if (!/^\d+$/.test(propertyId) || propertyId === "0") return false;
+
+    if (action.type === "ADD_FAVORITE") {
+      favoritePropertyIds.add(propertyId);
+    } else {
+      favoritePropertyIds.delete(propertyId);
+    }
+    saveFavoritePropertyIds();
+    syncFavoriteIndicators();
+    return false;
+  });
+
+  if (!mapActions.length) return;
+
   await Promise.all([propertyDataReady, legalDongDataReady]);
 
-  actions.forEach(action => {
+  mapActions.forEach(action => {
     if (!action || typeof action.type !== "string") return;
 
     if (action.type === "MOVE_MAP") {
@@ -1578,7 +1606,20 @@ function getPropertiesForAiAction(propertyIds) {
 function highlightAiProperties(items) {
   clearAiHighlightMarkers();
 
+  const itemsByPosition = new Map();
   items.forEach(item => {
+    const lat = Number(item?.latitude);
+    const lng = Number(item?.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    const positionKey = `${lat.toFixed(7)},${lng.toFixed(7)}`;
+    const positionedItems = itemsByPosition.get(positionKey) || [];
+    positionedItems.push(item);
+    itemsByPosition.set(positionKey, positionedItems);
+  });
+
+  itemsByPosition.forEach((positionedItems, positionKey) => {
+    const item = positionedItems[0];
     const marker = new naver.maps.Marker({
       position: new naver.maps.LatLng(item.latitude, item.longitude),
       map,
@@ -1594,9 +1635,11 @@ function highlightAiProperties(items) {
     });
 
     naver.maps.Event.addListener(marker, "click", () => {
-      if (!distanceMeasureActive) renderList([item], { openMobileList: true });
+      if (!distanceMeasureActive) {
+        renderList(positionedItems, { openMobileList: true });
+      }
     });
-    aiHighlightMarkerMap.set(item.id, marker);
+    aiHighlightMarkerMap.set(positionKey, marker);
   });
 }
 

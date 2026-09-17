@@ -27,13 +27,17 @@ class PropertySearchTool:
 
     def search(self, raw_arguments: dict[str, Any]) -> dict[str, Any]:
         arguments = PropertySearchArguments.model_validate(raw_arguments)
-        params: dict[str, str | int] = {"limit": 10}
+        params: dict[str, str | int] = {"limit": arguments.limit or 10}
         if arguments.keyword:
             params["keyword"] = arguments.keyword
         if arguments.property_type:
             params["propertyType"] = arguments.property_type
         if arguments.max_price is not None:
             params["maxPrice"] = arguments.max_price
+        if arguments.sort_by:
+            params["sortBy"] = arguments.sort_by
+        if arguments.sort_order:
+            params["sortOrder"] = arguments.sort_order
         if arguments.legal_dong_code:
             params["legalDongCode"] = arguments.legal_dong_code
         if arguments.map_bounds is not None:

@@ -31,6 +31,15 @@ class SelectedRegion(BaseModel):
     bounds: MapBounds
 
 
+class SelectedPropertySummary(BaseModel):
+    id: str = Field(min_length=1, max_length=30)
+    title: str | None = Field(default=None, max_length=120)
+    building_name: str | None = Field(default=None, max_length=120)
+    property_type: str | None = Field(default=None, max_length=30)
+    sale_price: int | None = Field(default=None, ge=0)
+    address: str | None = Field(default=None, max_length=200)
+
+
 class AppState(BaseModel):
     current_page: str
     map_center: MapCenter | None = None
@@ -41,6 +50,7 @@ class AppState(BaseModel):
     current_legal_dong: SelectedRegion | None = None
     selected_region: SelectedRegion | str | None = None
     selected_property_id: str | None = None
+    selected_property: SelectedPropertySummary | None = None
     favorite_property_ids: list[str] = Field(default_factory=list)
     filters: PropertyFilters | None = None
 
@@ -97,6 +107,16 @@ class HighlightPropertiesAction(BaseModel):
 
 class OpenPropertyAction(BaseModel):
     type: Literal["OPEN_PROPERTY"] = "OPEN_PROPERTY"
+    property_id: int = Field(ge=1)
+
+
+class AddFavoriteAction(BaseModel):
+    type: Literal["ADD_FAVORITE"] = "ADD_FAVORITE"
+    property_id: int = Field(ge=1)
+
+
+class RemoveFavoriteAction(BaseModel):
+    type: Literal["REMOVE_FAVORITE"] = "REMOVE_FAVORITE"
     property_id: int = Field(ge=1)
 
 
@@ -159,6 +179,8 @@ UiAction = Annotated[
     | FitBoundsAction
     | HighlightPropertiesAction
     | OpenPropertyAction
+    | AddFavoriteAction
+    | RemoveFavoriteAction
     | SelectRegionAction,
     Field(discriminator="type"),
 ]
@@ -174,6 +196,9 @@ class PropertySearchArguments(BaseModel):
     keyword: str | None = Field(default=None, max_length=100)
     property_type: Literal["아파트", "오피스텔", "빌라"] | None = None
     max_price: int | None = Field(default=None, ge=0, le=100_000_000_000)
+    limit: int | None = Field(default=None, ge=1, le=20)
+    sort_by: Literal["sale_price"] | None = None
+    sort_order: Literal["asc", "desc"] | None = None
     map_bounds: MapBounds | None = None
     legal_dong_code: str | None = Field(default=None, pattern=r"^\d{8}$")
 

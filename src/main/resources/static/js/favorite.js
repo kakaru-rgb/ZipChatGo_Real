@@ -179,7 +179,7 @@ function updateFavoriteSummary() {
   )).length;
 
   summary.innerHTML = `총 <strong>${favoriteCount.toLocaleString()}개</strong>의 관심목록이 있습니다.`;
-  mapBack.hidden = favoriteCount === 0;
+  mapBack.hidden = displayedFavoriteProperties.length === 0;
 }
 
 function openPropertyOnMap(propertyId) {
