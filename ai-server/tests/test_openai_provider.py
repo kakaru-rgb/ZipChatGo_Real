@@ -867,8 +867,15 @@ def test_generate_plural_favorites_accepts_ids_from_current_search_results() -> 
         arguments=json.dumps({"property_ids": [201, 202, 203]}),
         call_id="add-search-results",
     )
+    presented_call = SimpleNamespace(
+        type="function_call",
+        name="set_presented_properties",
+        arguments=json.dumps({"property_ids": [201, 202, 203]}),
+        call_id="present-search-results",
+    )
     client.responses.create.side_effect = [
         SimpleNamespace(output=[search_call], output_text=""),
+        SimpleNamespace(output=[presented_call], output_text=""),
         SimpleNamespace(output=[add_call], output_text=""),
         SimpleNamespace(output=[], output_text="검색된 매물 3개를 관심매물에 추가했습니다."),
     ]
@@ -893,6 +900,73 @@ def test_generate_plural_favorites_accepts_ids_from_current_search_results() -> 
         action for action in result.actions if action.type == "ADD_FAVORITE"
     ]
     assert [action.property_id for action in favorite_actions] == [201, 202, 203]
+
+
+def test_generate_preserves_the_exact_presented_property_order() -> None:
+    client = Mock()
+    lookup_call = SimpleNamespace(
+        type="function_call",
+        name="get_properties_by_ids",
+        arguments=json.dumps({"property_ids": [914, 381, 205]}),
+        call_id="lookup-favorites-for-order",
+    )
+    presented_call = SimpleNamespace(
+        type="function_call",
+        name="set_presented_properties",
+        arguments=json.dumps({"property_ids": [381, 205, 914]}),
+        call_id="record-presented-order",
+    )
+    client.responses.create.side_effect = [
+        SimpleNamespace(output=[lookup_call], output_text=""),
+        SimpleNamespace(output=[presented_call], output_text=""),
+        SimpleNamespace(output=[], output_text="관심매물 세 개를 보여드렸습니다."),
+    ]
+    get_properties_by_ids = Mock(return_value={
+        "requested_ids": [914, 381, 205],
+        "properties": [
+            {"id": 914, "building_name": "세 번째"},
+            {"id": 381, "building_name": "첫 번째"},
+            {"id": 205, "building_name": "두 번째"},
+        ],
+        "missing_ids": [],
+    })
+
+    with patch("app.providers.openai_provider.OpenAI", return_value=client):
+        provider = OpenAIProvider("test-key", "test-model", "instructions")
+        result = provider.generate(
+            "내 관심매물을 보여줘.",
+            app_state={"favorite_property_ids": [914, 381, 205]},
+            get_properties_by_ids=get_properties_by_ids,
+        )
+
+    assert result.recent_context.recent_property_ids == [381, 205, 914]
+
+
+def test_generate_removes_second_item_from_presented_order_not_storage_order() -> None:
+    client = Mock()
+    remove_call = SimpleNamespace(
+        type="function_call",
+        name="remove_favorites",
+        arguments=json.dumps({"property_ids": [205]}),
+        call_id="remove-second-presented",
+    )
+    client.responses.create.side_effect = [
+        SimpleNamespace(output=[remove_call], output_text=""),
+        SimpleNamespace(output=[], output_text="두 번째 매물을 삭제했습니다."),
+    ]
+
+    with patch("app.providers.openai_provider.OpenAI", return_value=client):
+        provider = OpenAIProvider("test-key", "test-model", "instructions")
+        result = provider.generate(
+            "두 번째 삭제해줘.",
+            app_state={"favorite_property_ids": [914, 381, 205]},
+            recent_context={"recent_property_ids": [381, 205, 914]},
+            search_properties=Mock(),
+        )
+
+    assert [(action.type, action.property_id) for action in result.actions] == [
+        ("REMOVE_FAVORITE", 205)
+    ]
 
 
 def test_generate_uses_explicit_property_id_for_favorite_action() -> None:

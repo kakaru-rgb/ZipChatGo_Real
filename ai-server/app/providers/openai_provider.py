@@ -408,6 +408,7 @@ For questions about the current favorite-property list, its prices, areas, locat
 Match the favorite-property answer detail to the question. For a count question, answer only the count from favorite_property_ids and do not call get_properties_by_ids or print property details. For a simple list question, list only property names or the minimum identifying information; omit price, area, and full address unless requested. For a detail question, provide the requested details. For a comparison question, state the result and only the fields needed for that comparison; do not dump every field of every favorite.
 Use add_favorites or remove_favorites only when the user explicitly asks to change the favorite list. Interpret singular or plural references from App State, recent_property_ids, and tool results. Preserve distinct property IDs even when their names are identical. If the referenced IDs are not clear from that context, ask the user instead of guessing. Favorite-list questions such as showing, counting, or comparing are reads and must never produce favorite mutation actions.
 Use clear_favorites when the user clearly asks to remove the entire favorite list, regardless of their exact wording. Never interpret a whole-list request as an apartment name. Do not use clear_favorites for a compound request that also asks to add properties; ask the user to split that request.
+Treat recent_property_ids as the authoritative ordered list for references such as first, second, last, or plural subsets. Never use the storage order of favorite_property_ids to resolve those references; favorite_property_ids indicates membership only.
 After listing favorites, expressions such as '여기서 2번', '그중 두 번째', or '목록에서 2번' refer to the displayed order in recent_property_ids, not to literal property ID 2. Use the corresponding actual property ID. If the requested position is outside the displayed list, ask the user to choose a valid item and emit no action.
 After get_properties_by_ids, call set_presented_properties before answering. Pass exactly the IDs that the answer will visibly present, in the same order. If a filter has no matches, pass an empty list. Never pass all fetched favorites when the answer presents only a subset.
 사용자가 매물을 찾아 지도에 보여 달라고 하면 search_properties를 먼저 호출하세요.
@@ -813,7 +814,8 @@ class OpenAIProvider:
         actions: list[UiAction] = []
         searched_properties: list[dict[str, Any]] = []
         favorite_properties: list[dict[str, Any]] = []
-        favorite_lookup_completed = False
+        latest_lookup_properties: list[dict[str, Any]] = []
+        property_lookup_completed = False
         presented_property_context_recorded = False
         searched_stations: list[dict[str, Any]] = []
         law_search_attempted = False
@@ -854,8 +856,10 @@ class OpenAIProvider:
             excluded_tool_names.add("get_properties_by_ids")
         if (
             favorite_count_requested
-            or get_properties_by_ids is None
-            or not favorite_property_ids
+            or (
+                search_properties is None
+                and (get_properties_by_ids is None or not favorite_property_ids)
+            )
         ):
             excluded_tool_names.add("set_presented_properties")
         if not favorite_property_ids:
@@ -932,6 +936,11 @@ class OpenAIProvider:
                     "type": "function",
                     "name": "get_properties_by_ids",
                 }
+            elif property_lookup_completed and not presented_property_context_recorded:
+                request_options["tool_choice"] = {
+                    "type": "function",
+                    "name": "set_presented_properties",
+                }
             elif (
                 iteration == 0
                 and required_adjacency_region
@@ -1002,6 +1011,8 @@ class OpenAIProvider:
                         arguments["map_bounds"] = app_state["map_bounds"]
                     result = search_properties(arguments)
                     searched_properties = result.get("properties", [])
+                    latest_lookup_properties = searched_properties
+                    property_lookup_completed = True
                     next_recent_property_ids = [
                         int(item["id"])
                         for item in searched_properties[:10]
@@ -1042,7 +1053,8 @@ class OpenAIProvider:
                         arguments["property_ids"] = favorite_property_id_list
                         result = get_properties_by_ids(arguments)
                         favorite_properties = result.get("properties", [])
-                        favorite_lookup_completed = True
+                        latest_lookup_properties = favorite_properties
+                        property_lookup_completed = True
                         next_recent_property_ids = []
                         next_recent_properties = []
                         last_referenced_property_id = None
@@ -1061,11 +1073,11 @@ class OpenAIProvider:
                     )) if isinstance(raw_ids, list) else []
                     fetched_by_id = {
                         int(item["id"]): item
-                        for item in favorite_properties
+                        for item in latest_lookup_properties
                         if str(item.get("id", "")).isdigit()
                     }
                     if (
-                        not favorite_lookup_completed
+                        not property_lookup_completed
                         or len(presented_ids) != len(raw_ids)
                         or not set(presented_ids).issubset(fetched_by_id)
                     ):
@@ -1108,6 +1120,10 @@ class OpenAIProvider:
                         not property_ids
                         or len(property_ids) != len(raw_ids)
                         or not set(property_ids).issubset(allowed_property_ids)
+                        or (
+                            function_call.name == "remove_favorites"
+                            and not set(property_ids).issubset(favorite_property_ids)
+                        )
                     ):
                         result = {
                             "status": "rejected",
