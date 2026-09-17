@@ -1,0 +1,83 @@
+{
+  "input_csv": "C:\\ajb\\데이터\\공인중개사_기출문제\\공인중개사_문항_2024.csv",
+  "subject": "공인중개사법령 및 중개실무",
+  "target_row_count": 40,
+  "expected_question_count": 40,
+  "blocking_issue_count": 0,
+  "warning_count": 8,
+  "issues": [
+    {
+      "severity": "warning",
+      "code": "SHORT_CHOICE",
+      "row_number": 85,
+      "question_number": "4",
+      "field": "선택지1",
+      "message": "선택지가 3자 미만임 (조합형 label 선택지로 보임)",
+      "value_preview": "ㄱ"
+    },
+    {
+      "severity": "warning",
+      "code": "SHORT_CHOICE",
+      "row_number": 85,
+      "question_number": "4",
+      "field": "선택지2",
+      "message": "선택지가 3자 미만임 (조합형 label 선택지로 보임)",
+      "value_preview": "ㄴ"
+    },
+    {
+      "severity": "warning",
+      "code": "SHORT_CHOICE",
+      "row_number": 88,
+      "question_number": "7",
+      "field": "선택지1",
+      "message": "선택지가 3자 미만임 (조합형 label 선택지로 보임)",
+      "value_preview": "ㄱ"
+    },
+    {
+      "severity": "warning",
+      "code": "SHORT_CHOICE",
+      "row_number": 108,
+      "question_number": "27",
+      "field": "선택지1",
+      "message": "선택지가 3자 미만임 (조합형 label 선택지로 보임)",
+      "value_preview": "ㄱ"
+    },
+    {
+      "severity": "warning",
+      "code": "SHORT_CHOICE",
+      "row_number": 108,
+      "question_number": "27",
+      "field": "선택지2",
+      "message": "선택지가 3자 미만임 (조합형 label 선택지로 보임)",
+      "value_preview": "ㄴ"
+    },
+    {
+      "severity": "warning",
+      "code": "SHORT_CHOICE",
+      "row_number": 116,
+      "question_number": "35",
+      "field": "선택지1",
+      "message": "선택지가 3자 미만임 (조합형 label 선택지로 보임)",
+      "value_preview": "ㄱ"
+    },
+    {
+      "severity": "warning",
+      "code": "SHORT_CHOICE",
+      "row_number": 116,
+      "question_number": "35",
+      "field": "선택지2",
+      "message": "선택지가 3자 미만임 (조합형 label 선택지로 보임)",
+      "value_preview": "ㄴ"
+    },
+    {
+      "severity": "warning",
+      "code": "SHORT_CHOICE",
+      "row_number": 120,
+      "question_number": "39",
+      "field": "선택지1",
+      "message": "선택지가 3자 미만임 (조합형 label 선택지로 보임)",
+      "value_preview": "ㄴ"
+    }
+  ],
+  "passed": true
+}
