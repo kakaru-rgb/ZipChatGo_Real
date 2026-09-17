@@ -265,9 +265,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const DOC_TYPE_LABELS = {
     OWNERSHIP: '등기부등본',
     BUILDING_REGISTER: '건축물대장',
-    LAND_REGISTER: '토지대장'
+    LAND_REGISTER: '토지대장',
+    SEAL_CERTIFICATE: '인감증명서'
   };
-  const REQUIRED_DOC_TYPES = ['OWNERSHIP', 'BUILDING_REGISTER', 'LAND_REGISTER'];
+  const REQUIRED_DOC_TYPES = ['OWNERSHIP', 'BUILDING_REGISTER', 'LAND_REGISTER', 'SEAL_CERTIFICATE'];
 
   async function loadDocuments(propertyId) {
     const docListEl = document.getElementById('docList');

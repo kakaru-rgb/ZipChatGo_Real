@@ -22,7 +22,7 @@ public class PropertyDocument {
     @Column("property_id")
     private Long propertyId;
 
-    // OWNERSHIP(등기부등본) / BUILDING_REGISTER(건축물대장) / LAND_REGISTER(토지대장)
+    // OWNERSHIP(등기부등본) / BUILDING_REGISTER(건축물대장) / LAND_REGISTER(토지대장) / SEAL_CERTIFICATE(인감증명서)
     @Column("doc_type")
     private String docType;
 
