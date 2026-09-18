@@ -1,4 +1,4 @@
-package com.onrender.zipchatgo.service;
+package com.onrender.zipchatgo.map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
