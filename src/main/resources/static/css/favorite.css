@@ -114,33 +114,6 @@ body.favorite-page {
   font-weight: 950;
 }
 
-.favorite-map-back {
-  width: fit-content;
-  min-height: 42px;
-  margin: 18px auto 0;
-  padding: 0 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  border: 1px solid rgba(30, 136, 255, 0.22);
-  border-radius: 14px;
-  background: rgba(30, 136, 255, 0.08);
-  color: var(--primary);
-  font-size: 14px;
-  font-weight: 850;
-  transition: background 160ms ease, transform 160ms ease;
-}
-
-.favorite-map-back:hover {
-  background: rgba(30, 136, 255, 0.15);
-  transform: translateY(-1px);
-}
-
-.favorite-map-back[hidden] {
-  display: none;
-}
-
 /* ===========================
    Favorite Cards
 =========================== */

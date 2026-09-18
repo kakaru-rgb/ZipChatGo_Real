@@ -10,7 +10,6 @@ let sigunguIndex = null;
 let dongIndex = null;
 
 let markerMap = new Map();
-let aiHighlightMarkerMap = new Map();
 let infoMarker = null;
 let renderTimer = null;
 
@@ -34,25 +33,14 @@ let distanceMeasureTotalLabel = null;
 
 const MOBILE_MAP_MEDIA_QUERY = window.matchMedia("(max-width: 768px)");
 const FAVORITE_PROPERTY_STORAGE_KEY = "zipchatgo.favoritePropertyIds";
-const propertyPriceHistoryCache = new Map();
 let mobileMapView = "map";
 let favoritePropertyIds = loadFavoritePropertyIds();
-let currentMapLocation = null;
-let reverseGeocodeTimer = null;
-let reverseGeocodeRequestSequence = 0;
-const reverseGeocodeCache = new Map();
-let legalDongRegions = [];
-let legalDongRegionByCode = new Map();
-let currentLegalDong = null;
-let selectedLegalDong = null;
-let selectedLegalDongLabelMarker = null;
 
 const INITIAL_CENTER = new naver.maps.LatLng(37.40, 127.15);
 
 const APP_MIN_ZOOM = 10; // 0단계
 const APP_START_ZOOM = 11;   // 처음 화면 1단계
 const APP_MAX_ZOOM = 18; // 8단계
-const AI_MOVE_MIN_ZOOM_STAGE = 6;
 
 const SIGUNGU_STAGE_MAX = 2; // 1~2단계
 const DONG_STAGE_MAX = 4;    // 3~4단계
@@ -66,19 +54,6 @@ const PROPERTY_MARKER_WIDTH = 62;
 const PROPERTY_MARKER_HEIGHT = 58;
 const MAX_VISIBLE_POI_MARKERS = 500;
 const MAX_BUS_ROUTES_PER_STOP = 30;
-const REVERSE_GEOCODE_DELAY_MS = 400;
-const REVERSE_GEOCODE_CACHE_LIMIT = 50;
-const LEGAL_DONG_GEOJSON_URL = "/data/bundang_legal_dong.geojson";
-const LEGAL_DONG_COLORS = Object.freeze([
-  "#f4a6a6",
-  "#f6c58f",
-  "#f3df8b",
-  "#a8d8a8",
-  "#9fd9d2",
-  "#a9c8f5",
-  "#c6b1eb",
-  "#e5add2"
-]);
 
 const PROPERTY_IMAGE_BASE_PATH = "/data/아파트_공통_이미지";
 const APARTMENT_IMAGE_COUNT = 93;
@@ -146,75 +121,13 @@ map = new naver.maps.Map("map", {
   zoomControl: false
 });
 
-window.zipchatgoMapState = Object.freeze({
-  getSnapshot: getAiAppState
-});
-
-const propertyDataReady = loadProperties();
-const legalDongDataReady = loadLegalDongBoundaries();
-
-window.zipchatgoMapActions = Object.freeze({
-  execute: executeAiMapActions
-});
-
+loadProperties();
 loadPois();
-
-function getAiAppState() {
-  const center = map.getCenter();
-  const bounds = map.getBounds();
-  const southWest = bounds.getSW();
-  const northEast = bounds.getNE();
-  const maxPrice = document.getElementById("priceFilter")?.value || "";
-
-  return {
-    current_page: "map",
-    map_center: {
-      lat: center.lat(),
-      lng: center.lng()
-    },
-    zoom: getAppZoomStage(map.getZoom()),
-    current_region: getCurrentMapLocation(center)?.region || null,
-    center_address: getCurrentMapLocation(center)?.address || null,
-    map_bounds: {
-      south: southWest.lat(),
-      west: southWest.lng(),
-      north: northEast.lat(),
-      east: northEast.lng()
-    },
-    current_legal_dong: toLegalDongAppState(currentLegalDong),
-    selected_region: selectedLegalDong ? {
-      type: "legal_dong",
-      code: selectedLegalDong.code,
-      name: selectedLegalDong.name,
-      full_name: selectedLegalDong.fullName,
-      center: selectedLegalDong.center,
-      bounds: selectedLegalDong.bounds
-    } : null,
-    selected_property_id: selectedProperty?.id != null ? String(selectedProperty.id) : null,
-    selected_property: selectedProperty ? {
-      id: String(selectedProperty.id),
-      title: selectedProperty.title || null,
-      building_name: selectedProperty.building_name || null,
-      property_type: selectedProperty.property_type || null,
-      sale_price: Number.isFinite(Number(selectedProperty.sale_price))
-        ? Number(selectedProperty.sale_price)
-        : null,
-      address: selectedProperty.address || null
-    } : null,
-    favorite_property_ids: Array.from(favoritePropertyIds, String),
-    filters: {
-      keyword: document.getElementById("searchInput")?.value.trim() || null,
-      property_type: document.getElementById("typeFilter")?.value || null,
-      max_price: maxPrice ? Number(maxPrice) * 10000 : null
-    }
-  };
-}
 
 async function loadProperties() {
   try {
     const res = await fetch("/api/map/properties");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    reportFallbackDataSource(res, "매물");
     const data = await res.json();
 
     allProperties = data
@@ -240,7 +153,6 @@ async function loadProperties() {
     map.setZoom(APP_START_ZOOM);
 
     bindEvents();
-    scheduleReverseGeocode();
 
     if (!openRequestedPropertyFromUrl()) {
       renderList([]);
@@ -257,7 +169,6 @@ async function loadPois() {
   try {
     const res = await fetch("/api/map/pois");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    reportFallbackDataSource(res, "주변 시설");
     const data = await res.json();
 
     allPois = data
@@ -304,33 +215,11 @@ function reportMapDataError(message) {
   status.hidden = false;
 }
 
-function reportFallbackDataSource(response, dataLabel) {
-  if (response.headers.get("X-Map-Data-Source") !== "fallback-json") return;
-
-  const status = document.getElementById("mapDataStatus");
-  if (!status) return;
-
-  const message = `TiDB 연결 문제로 ${dataLabel} 샘플 데이터를 표시하고 있습니다.`;
-  if (!status.textContent.includes(message)) {
-    status.textContent = status.textContent ? `${status.textContent} ${message}` : message;
-  }
-  status.classList.add("is-fallback");
-  status.hidden = false;
-}
-
 function bindEvents() {
-  updateMapZoomLevelIndicator();
-  naver.maps.Event.addListener(map, "zoom_changed", updateMapZoomLevelIndicator);
-  naver.maps.Event.addListener(map, "idle", () => {
-    updateMapZoomLevelIndicator();
-    scheduleRender();
-    scheduleReverseGeocode();
-    updateCurrentLegalDong();
-    clearSelectedLegalDongWhenOutOfView();
-  });
+  naver.maps.Event.addListener(map, "idle", scheduleRender);
   naver.maps.Event.addListener(map, "dragstart", closeAllInfoPopups);
   naver.maps.Event.addListener(map, "zoomstart", closeAllInfoPopups);
-  naver.maps.Event.addListener(map, "click", handleMapClick);
+  naver.maps.Event.addListener(map, "click", handleDistanceMeasureClick);
   naver.maps.Event.addListener(map, "mousemove", handleDistanceMeasureMouseMove);
 
   document.getElementById("map").addEventListener("contextmenu", event => {
@@ -366,10 +255,6 @@ function bindEvents() {
   document.getElementById("distanceMeasureClear").addEventListener("click", () => {
     resetDistanceMeasurement({ keepOpen: true });
   });
-  document.getElementById("selectedLegalDongClear").addEventListener(
-    "click",
-    clearSelectedLegalDong
-  );
 
   document.querySelectorAll(".poi-toggle").forEach(button => {
     button.addEventListener("click", () => togglePoiCategory(button));
@@ -389,33 +274,6 @@ function bindEvents() {
   MOBILE_MAP_MEDIA_QUERY.addEventListener("change", syncResponsiveMapLayout);
   window.addEventListener("storage", handleFavoriteStorageChange);
   syncResponsiveMapLayout();
-}
-
-function updateMapZoomLevelIndicator() {
-  const indicator = document.getElementById("mapZoomLevelIndicator");
-  const fill = document.getElementById("mapZoomLevelFill");
-  const marker = document.getElementById("mapZoomLevelMarker");
-  const value = document.getElementById("mapZoomLevelValue");
-  if (!indicator || !fill || !marker || !value || !map) return;
-
-  const mapZoom = Number(map.getZoom());
-  if (!Number.isFinite(mapZoom)) return;
-
-  const zoomStage = getAppZoomStage(mapZoom);
-  const minStage = getAppZoomStage(APP_MIN_ZOOM);
-  const maxStage = getAppZoomStage(APP_MAX_ZOOM);
-  const clampedStage = Math.min(maxStage, Math.max(minStage, zoomStage));
-  const range = maxStage - minStage;
-  const progress = range > 0
-    ? ((clampedStage - minStage) / range) * 100
-    : 100;
-
-  value.value = String(zoomStage);
-  value.textContent = String(zoomStage);
-  fill.style.height = `${progress}%`;
-  marker.style.bottom = `${progress}%`;
-  value.style.bottom = `${progress}%`;
-  indicator.setAttribute("aria-valuenow", String(zoomStage));
 }
 
 function scheduleRender() {
@@ -1109,7 +967,19 @@ function createPropertyMarker(item) {
     map,
     clickable: !distanceMeasureActive,
     icon: {
-      content: renderPropertyMarkerContent(item),
+      content: `
+        <div class="property-marker">
+          <svg class="property-marker-shape" viewBox="0 0 62 58" aria-hidden="true">
+            <path d="M2 20Q1 18 3 17L28 2Q31 0 34 2L59 17Q61 18 60 20T57 22H56V54Q56 56 54 56H8Q6 56 6 54V22H5Q3 22 2 20Z"></path>
+            <path class="property-marker-roof-highlight" d="M4 17.5 28.5 2.7Q31 1.2 33.5 2.7L58 17.5Q59.5 18.5 58.5 20H3.5Q2.5 18.5 4 17.5Z"></path>
+          </svg>
+          <div class="property-area">${formatAreaPyeong(item.exclusive_area)}</div>
+          <div class="property-marker-price">
+              <span class="deal-type">매</span>
+              <span class="deal-price">${formatPriceToEok(item.sale_price)}</span>
+          </div>
+        </div>
+      `,
       anchor: new naver.maps.Point(
         PROPERTY_MARKER_WIDTH / 2,
         PROPERTY_MARKER_HEIGHT / 2
@@ -1125,527 +995,6 @@ function createPropertyMarker(item) {
   });
 
   return marker;
-}
-
-async function loadLegalDongBoundaries() {
-  try {
-    const response = await fetch(LEGAL_DONG_GEOJSON_URL);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-    const geojson = await response.json();
-    const features = Array.isArray(geojson?.features) ? geojson.features : [];
-    legalDongRegions = features.map(createLegalDongRegion).filter(Boolean);
-
-    if (!legalDongRegions.length) {
-      throw new Error("법정동 경계가 없습니다.");
-    }
-
-    legalDongRegionByCode = new Map(
-      legalDongRegions.map(region => [region.code, region])
-    );
-    map.data.addGeoJson({
-      type: "FeatureCollection",
-      features
-    });
-    updateLegalDongStyles();
-    updateCurrentLegalDong();
-  } catch (error) {
-    console.error("법정동 경계 데이터 로드 실패:", error);
-    reportMapDataError("법정동 경계를 불러오지 못했습니다.");
-  }
-}
-
-function createLegalDongRegion(feature, index) {
-  const code = String(feature?.properties?.legal_dong_code || "").trim();
-  const name = String(feature?.properties?.legal_dong_name || "").trim();
-  const geometry = feature?.geometry;
-
-  if (!code || !name || !geometry) return null;
-
-  const polygonCoordinates = geometry.type === "Polygon"
-    ? [geometry.coordinates]
-    : geometry.type === "MultiPolygon"
-      ? geometry.coordinates
-      : [];
-  if (!polygonCoordinates.length) return null;
-
-  const bounds = getLegalDongCoordinateBounds(polygonCoordinates);
-  if (!bounds) return null;
-  const labelPoint = getLegalDongLabelPoint(polygonCoordinates, bounds);
-
-  const region = {
-    code,
-    name,
-    fullName: `경기도 성남시 분당구 ${name}`,
-    color: LEGAL_DONG_COLORS[index % LEGAL_DONG_COLORS.length],
-    bounds,
-    labelPoint,
-    center: {
-      lat: (bounds.south + bounds.north) / 2,
-      lng: (bounds.west + bounds.east) / 2
-    },
-    coordinates: polygonCoordinates
-  };
-
-  return region;
-}
-
-function getLegalDongCoordinateBounds(polygons) {
-  let south = Infinity;
-  let west = Infinity;
-  let north = -Infinity;
-  let east = -Infinity;
-
-  polygons.forEach(polygon => {
-    polygon.forEach(ring => {
-      ring.forEach(coordinate => {
-        const lng = Number(coordinate?.[0]);
-        const lat = Number(coordinate?.[1]);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-        south = Math.min(south, lat);
-        west = Math.min(west, lng);
-        north = Math.max(north, lat);
-        east = Math.max(east, lng);
-      });
-    });
-  });
-
-  return [south, west, north, east].every(Number.isFinite)
-    ? { south, west, north, east }
-    : null;
-}
-
-function getLegalDongLabelPoint(polygons, bounds) {
-  const boundsCenter = {
-    lng: (bounds.west + bounds.east) / 2,
-    lat: (bounds.south + bounds.north) / 2
-  };
-  const centroidCandidates = polygons
-    .map(polygon => getRingCentroid(polygon[0]))
-    .filter(Boolean)
-    .sort((left, right) => right.area - left.area);
-  const candidates = [...centroidCandidates, boundsCenter];
-  const containedCandidate = candidates.find(point => (
-    isPointInsideLegalDong(point.lng, point.lat, polygons)
-  ));
-  if (containedCandidate) {
-    return { lat: containedCandidate.lat, lng: containedCandidate.lng };
-  }
-
-  let bestGridPoint = null;
-  let bestDistance = Infinity;
-  const gridSize = 12;
-  for (let row = 0; row < gridSize; row += 1) {
-    for (let column = 0; column < gridSize; column += 1) {
-      const lat = bounds.south + (bounds.north - bounds.south) * (row + 0.5) / gridSize;
-      const lng = bounds.west + (bounds.east - bounds.west) * (column + 0.5) / gridSize;
-      if (!isPointInsideLegalDong(lng, lat, polygons)) continue;
-
-      const distance = (lat - boundsCenter.lat) ** 2 + (lng - boundsCenter.lng) ** 2;
-      if (distance < bestDistance) {
-        bestGridPoint = { lat, lng };
-        bestDistance = distance;
-      }
-    }
-  }
-
-  return bestGridPoint || boundsCenter;
-}
-
-function getRingCentroid(ring) {
-  if (!Array.isArray(ring) || ring.length < 3) return null;
-
-  const [originLng, originLat] = ring[0];
-  let doubleArea = 0;
-  let lngSum = 0;
-  let latSum = 0;
-  for (let current = 0, previous = ring.length - 1; current < ring.length; previous = current++) {
-    const [currentLng, currentLat] = ring[current];
-    const [previousLng, previousLat] = ring[previous];
-    const currentX = currentLng - originLng;
-    const currentY = currentLat - originLat;
-    const previousX = previousLng - originLng;
-    const previousY = previousLat - originLat;
-    const cross = previousX * currentY - currentX * previousY;
-    doubleArea += cross;
-    lngSum += (previousX + currentX) * cross;
-    latSum += (previousY + currentY) * cross;
-  }
-
-  if (Math.abs(doubleArea) < Number.EPSILON) return null;
-  return {
-    lng: originLng + lngSum / (3 * doubleArea),
-    lat: originLat + latSum / (3 * doubleArea),
-    area: Math.abs(doubleArea / 2)
-  };
-}
-
-function getLegalDongStyle(feature) {
-  const code = String(feature.getProperty("legal_dong_code") || "").trim();
-  const region = legalDongRegionByCode.get(code);
-  const selected = Boolean(region && selectedLegalDong === region);
-
-  return {
-    visible: selected,
-    clickable: false,
-    fillColor: region?.color || LEGAL_DONG_COLORS[0],
-    fillOpacity: selected ? 0.34 : 0,
-    strokeColor: "#d94f5c",
-    strokeOpacity: selected ? 0.95 : 0,
-    strokeWeight: selected ? 3 : 0,
-    zIndex: 1
-  };
-}
-
-function updateLegalDongStyles() {
-  map.data.setStyle(getLegalDongStyle);
-}
-
-function selectLegalDong(region, { fitBounds = false } = {}) {
-  selectedLegalDong = region;
-  updateLegalDongStyles();
-  updateSelectedLegalDongBadge();
-  updateSelectedLegalDongLabel();
-
-  if (fitBounds) {
-    map.fitBounds(new naver.maps.LatLngBounds(
-      new naver.maps.LatLng(region.bounds.south, region.bounds.west),
-      new naver.maps.LatLng(region.bounds.north, region.bounds.east)
-    ));
-  }
-}
-
-function selectLegalDongByName(regionName) {
-  const normalizedName = String(regionName || "").trim();
-  const region = legalDongRegions.find(item => item.name === normalizedName);
-  if (!region) return false;
-
-  selectLegalDong(region, { fitBounds: true });
-  return true;
-}
-
-function clearSelectedLegalDong() {
-  if (!selectedLegalDong) return;
-  selectedLegalDong = null;
-  updateLegalDongStyles();
-  updateSelectedLegalDongBadge();
-  updateSelectedLegalDongLabel();
-}
-
-function clearSelectedLegalDongWhenOutOfView() {
-  if (!selectedLegalDong) return;
-
-  const viewport = map.getBounds();
-  const southWest = viewport.getSW();
-  const northEast = viewport.getNE();
-  const region = selectedLegalDong.bounds;
-  const intersects = !(
-    northEast.lat() < region.south ||
-    southWest.lat() > region.north ||
-    northEast.lng() < region.west ||
-    southWest.lng() > region.east
-  );
-
-  if (!intersects) clearSelectedLegalDong();
-}
-
-function updateSelectedLegalDongBadge() {
-  const badge = document.getElementById("selectedLegalDongBadge");
-  const name = document.getElementById("selectedLegalDongName");
-  if (!badge || !name) return;
-
-  badge.hidden = !selectedLegalDong;
-  name.textContent = selectedLegalDong?.fullName || "";
-}
-
-function updateSelectedLegalDongLabel() {
-  if (!selectedLegalDong) {
-    selectedLegalDongLabelMarker?.setMap(null);
-    return;
-  }
-
-  if (!selectedLegalDongLabelMarker) {
-    selectedLegalDongLabelMarker = new naver.maps.Marker({
-      clickable: false,
-      zIndex: 80
-    });
-  }
-
-  selectedLegalDongLabelMarker.setIcon({
-    content: `<div class="selected-legal-dong-map-label">${escapeHtml(selectedLegalDong.name)}</div>`,
-    anchor: new naver.maps.Point(0, 0)
-  });
-  selectedLegalDongLabelMarker.setPosition(new naver.maps.LatLng(
-    selectedLegalDong.labelPoint.lat,
-    selectedLegalDong.labelPoint.lng
-  ));
-  selectedLegalDongLabelMarker.setMap(map);
-}
-
-function updateCurrentLegalDong() {
-  if (!legalDongRegions.length) {
-    currentLegalDong = null;
-    return;
-  }
-
-  const center = map.getCenter();
-  currentLegalDong = legalDongRegions.find(region => (
-    isPointInsideLegalDong(center.lng(), center.lat(), region.coordinates)
-  )) || null;
-}
-
-function isPointInsideLegalDong(lng, lat, polygons) {
-  return polygons.some(polygon => {
-    const [outerRing, ...innerRings] = polygon;
-    return isPointInsideRing(lng, lat, outerRing)
-      && !innerRings.some(ring => isPointInsideRing(lng, lat, ring));
-  });
-}
-
-function isPointInsideRing(lng, lat, ring) {
-  let inside = false;
-
-  for (let current = 0, previous = ring.length - 1; current < ring.length; previous = current++) {
-    const [currentLng, currentLat] = ring[current];
-    const [previousLng, previousLat] = ring[previous];
-    const crossesLatitude = (currentLat > lat) !== (previousLat > lat);
-    if (crossesLatitude) {
-      const intersectionLng = (
-        (previousLng - currentLng) * (lat - currentLat)
-        / (previousLat - currentLat)
-        + currentLng
-      );
-      if (lng < intersectionLng) inside = !inside;
-    }
-  }
-
-  return inside;
-}
-
-function toLegalDongAppState(region) {
-  if (!region) return null;
-  return {
-    type: "legal_dong",
-    code: region.code,
-    name: region.name,
-    full_name: region.fullName,
-    center: region.center,
-    bounds: region.bounds
-  };
-}
-
-function scheduleReverseGeocode() {
-  clearTimeout(reverseGeocodeTimer);
-  reverseGeocodeTimer = setTimeout(updateCurrentMapLocation, REVERSE_GEOCODE_DELAY_MS);
-}
-
-function updateCurrentMapLocation() {
-  if (!naver.maps.Service?.reverseGeocode) return;
-
-  const center = map.getCenter();
-  const cacheKey = getReverseGeocodeCacheKey(center);
-  const cached = reverseGeocodeCache.get(cacheKey);
-
-  if (cached) {
-    currentMapLocation = cached;
-    return;
-  }
-
-  const requestSequence = ++reverseGeocodeRequestSequence;
-  naver.maps.Service.reverseGeocode({ coords: center }, (status, response) => {
-    if (
-      status !== naver.maps.Service.Status.OK ||
-      requestSequence !== reverseGeocodeRequestSequence ||
-      getReverseGeocodeCacheKey(map.getCenter()) !== cacheKey
-    ) return;
-
-    const result = response?.v2;
-    const regionResult = result?.results?.find(item => item?.region);
-    const region = regionResult
-      ? ["area1", "area2", "area3", "area4"]
-          .map(area => regionResult.region?.[area]?.name)
-          .filter(Boolean)
-          .join(" ")
-      : null;
-    const address = result?.address?.roadAddress || result?.address?.jibunAddress || region;
-
-    if (!region && !address) return;
-
-    currentMapLocation = { cacheKey, region, address };
-    reverseGeocodeCache.set(cacheKey, currentMapLocation);
-
-    if (reverseGeocodeCache.size > REVERSE_GEOCODE_CACHE_LIMIT) {
-      reverseGeocodeCache.delete(reverseGeocodeCache.keys().next().value);
-    }
-  });
-}
-
-function getCurrentMapLocation(center) {
-  if (!currentMapLocation) return null;
-  return currentMapLocation.cacheKey === getReverseGeocodeCacheKey(center)
-    ? currentMapLocation
-    : null;
-}
-
-function getReverseGeocodeCacheKey(position) {
-  return `${position.lat().toFixed(4)},${position.lng().toFixed(4)}`;
-}
-
-function renderPropertyMarkerContent(item, highlighted = false) {
-  const highlightClass = highlighted ? " is-ai-highlighted" : "";
-
-  return `
-    <div class="property-marker${highlightClass}">
-      <svg class="property-marker-shape" viewBox="0 0 62 58" aria-hidden="true">
-        <path d="M2 20Q1 18 3 17L28 2Q31 0 34 2L59 17Q61 18 60 20T57 22H56V54Q56 56 54 56H8Q6 56 6 54V22H5Q3 22 2 20Z"></path>
-        <path class="property-marker-roof-highlight" d="M4 17.5 28.5 2.7Q31 1.2 33.5 2.7L58 17.5Q59.5 18.5 58.5 20H3.5Q2.5 18.5 4 17.5Z"></path>
-      </svg>
-      <div class="property-area">${formatAreaPyeong(item.exclusive_area)}</div>
-      <div class="property-marker-price">
-          <span class="deal-type">매</span>
-          <span class="deal-price">${formatPriceToEok(item.sale_price)}</span>
-      </div>
-    </div>
-  `;
-}
-
-async function executeAiMapActions(actions) {
-  if (!Array.isArray(actions)) return;
-
-  const mapActions = actions.filter(action => {
-    if (!action || !["ADD_FAVORITE", "REMOVE_FAVORITE"].includes(action.type)) return true;
-
-    const propertyId = String(action.property_id || "");
-    if (!/^\d+$/.test(propertyId) || propertyId === "0") return false;
-
-    if (action.type === "ADD_FAVORITE") {
-      favoritePropertyIds.add(propertyId);
-    } else {
-      favoritePropertyIds.delete(propertyId);
-    }
-    saveFavoritePropertyIds();
-    syncFavoriteIndicators();
-    return false;
-  });
-
-  if (!mapActions.length) return;
-
-  await Promise.all([propertyDataReady, legalDongDataReady]);
-
-  mapActions.forEach(action => {
-    if (!action || typeof action.type !== "string") return;
-
-    if (action.type === "MOVE_MAP") {
-      const lat = Number(action.lat);
-      const lng = Number(action.lng);
-      const zoomStage = Number(action.zoom);
-      const minStage = getAppZoomStage(APP_MIN_ZOOM);
-      const maxStage = getAppZoomStage(APP_MAX_ZOOM);
-
-      if (
-        Number.isFinite(lat) && lat >= -90 && lat <= 90 &&
-        Number.isFinite(lng) && lng >= -180 && lng <= 180 &&
-        Number.isInteger(zoomStage) && zoomStage >= minStage && zoomStage <= maxStage
-      ) {
-        moveMapTo(
-          new naver.maps.LatLng(lat, lng),
-          getMapZoomFromStage(Math.max(zoomStage, AI_MOVE_MIN_ZOOM_STAGE))
-        );
-      }
-      return;
-    }
-
-    if (action.type === "ZOOM_MAP") {
-      const delta = Number(action.delta);
-      if (!Number.isInteger(delta) || ![-3, -2, -1, 1, 2, 3].includes(delta)) return;
-
-      const targetZoom = Math.min(
-        APP_MAX_ZOOM,
-        Math.max(APP_MIN_ZOOM, map.getZoom() + delta)
-      );
-      moveMapTo(map.getCenter(), targetZoom);
-      return;
-    }
-
-    if (action.type === "FIT_BOUNDS") {
-      const items = getPropertiesForAiAction(action.property_ids);
-      if (items.length) {
-        renderList(items);
-        fitMapToData(items);
-      }
-      return;
-    }
-
-    if (action.type === "HIGHLIGHT_PROPERTIES") {
-      highlightAiProperties(getPropertiesForAiAction(action.property_ids));
-      return;
-    }
-
-    if (action.type === "OPEN_PROPERTY") {
-      const item = allProperties.find(property => property.id === String(action.property_id));
-      if (!item) return;
-
-      openPropertyDetail(item);
-      moveMapTo(new naver.maps.LatLng(item.latitude, item.longitude), APP_MAX_ZOOM);
-      return;
-    }
-
-    if (action.type === "SELECT_REGION") {
-      selectLegalDongByName(action.region_name);
-    }
-  });
-}
-
-function getPropertiesForAiAction(propertyIds) {
-  if (!Array.isArray(propertyIds)) return [];
-
-  const ids = new Set(propertyIds.slice(0, 10).map(String));
-  return allProperties.filter(property => ids.has(property.id));
-}
-
-function highlightAiProperties(items) {
-  clearAiHighlightMarkers();
-
-  const itemsByPosition = new Map();
-  items.forEach(item => {
-    const lat = Number(item?.latitude);
-    const lng = Number(item?.longitude);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-
-    const positionKey = `${lat.toFixed(7)},${lng.toFixed(7)}`;
-    const positionedItems = itemsByPosition.get(positionKey) || [];
-    positionedItems.push(item);
-    itemsByPosition.set(positionKey, positionedItems);
-  });
-
-  itemsByPosition.forEach((positionedItems, positionKey) => {
-    const item = positionedItems[0];
-    const marker = new naver.maps.Marker({
-      position: new naver.maps.LatLng(item.latitude, item.longitude),
-      map,
-      clickable: !distanceMeasureActive,
-      zIndex: 250,
-      icon: {
-        content: renderPropertyMarkerContent(item, true),
-        anchor: new naver.maps.Point(
-          PROPERTY_MARKER_WIDTH / 2,
-          PROPERTY_MARKER_HEIGHT / 2
-        )
-      }
-    });
-
-    naver.maps.Event.addListener(marker, "click", () => {
-      if (!distanceMeasureActive) {
-        renderList(positionedItems, { openMobileList: true });
-      }
-    });
-    aiHighlightMarkerMap.set(positionKey, marker);
-  });
-}
-
-function clearAiHighlightMarkers() {
-  for (const marker of aiHighlightMarkerMap.values()) marker.setMap(null);
-  aiHighlightMarkerMap.clear();
 }
 
 /* ===========================
@@ -1785,7 +1134,7 @@ function getFloorplanImagePath(item) {
 
 function loadFavoritePropertyIds() {
   try {
-    const storedValue = JSON.parse(sessionStorage.getItem(FAVORITE_PROPERTY_STORAGE_KEY) || "[]");
+    const storedValue = JSON.parse(localStorage.getItem(FAVORITE_PROPERTY_STORAGE_KEY) || "[]");
     if (!Array.isArray(storedValue)) return new Set();
 
     return new Set(storedValue.map(id => String(id)));
@@ -1797,7 +1146,7 @@ function loadFavoritePropertyIds() {
 
 function saveFavoritePropertyIds() {
   try {
-    sessionStorage.setItem(
+    localStorage.setItem(
       FAVORITE_PROPERTY_STORAGE_KEY,
       JSON.stringify(Array.from(favoritePropertyIds))
     );
@@ -2091,13 +1440,8 @@ function resetDistanceMeasurement({ keepOpen = false } = {}) {
   updateDistanceMeasureUi();
 }
 
-function handleMapClick(event) {
-  if (distanceMeasureActive) {
-    addDistanceMeasurePoint(event.coord);
-    return;
-  }
-
-  clearSelectedLegalDong();
+function handleDistanceMeasureClick(event) {
+  addDistanceMeasurePoint(event.coord);
 }
 
 function setMapMarkersInteractive(interactive) {
@@ -2108,7 +1452,6 @@ function setMapMarkersInteractive(interactive) {
   for (const marker of poiMarkerMap.values()) {
     marker.setClickable(interactive);
   }
-
 }
 
 function addDistanceMeasurePoint(coord) {
@@ -2408,9 +1751,6 @@ function renderPropertyDetail(item) {
   const samePyeongSaleItems = samePyeongItems.filter(candidate => candidate.sale_price > 0);
   const complexAveragePrice = getAverageValue(complexSaleItems, "sale_price");
   const samePyeongAveragePrice = getAverageValue(samePyeongSaleItems, "sale_price");
-  const recentThreeMonthItems = getRecentTransactions(samePyeongSaleItems, 3);
-  const recentThreeMonthAveragePrice = getAverageValue(recentThreeMonthItems, "sale_price");
-  const latestTransaction = getLatestTransaction(samePyeongSaleItems);
   const availableAreas = getComplexAreaSummary(sameComplexItems);
   const proximity = getPropertyProximity(item);
   const propertyName = item.title || item.building_name || "매물";
@@ -2451,7 +1791,7 @@ function renderPropertyDetail(item) {
     </section>
 
     <section class="property-detail-section">
-      ${renderDetailSectionHeading("가격 정보", "최근 12개월 실거래 기준")}
+      ${renderDetailSectionHeading("가격 정보", "현재 등록 매물 기준")}
       <div class="property-price-grid">
         ${renderPriceCard(
           `같은 단지 평균 (${complexSaleItems.length.toLocaleString()}건)`,
@@ -2462,37 +1802,8 @@ function renderPropertyDetail(item) {
           `같은 평수 평균 (${samePyeongSaleItems.length.toLocaleString()}건)`,
           formatOptionalPrice(samePyeongAveragePrice)
         )}
-        ${renderPriceCard(
-          `최근 3개월 평균 (${recentThreeMonthItems.length.toLocaleString()}건)`,
-          formatOptionalPrice(recentThreeMonthAveragePrice)
-        )}
-        ${renderPriceCard(
-          latestTransaction
-            ? `최근 실거래가 (${formatContractDate(latestTransaction.contract_date)})`
-            : "최근 실거래가",
-          formatOptionalPrice(latestTransaction?.sale_price)
-        )}
-      </div>
-    </section>
-
-    <section class="property-detail-section property-price-history-section"
-             data-price-history-property-id="${escapeHtml(item.id)}">
-      <div class="property-price-history-heading">
-        <div>
-          <h3>매매가 평균 추이</h3>
-          <p>같은 단지 · 같은 평형 월별 실거래</p>
-        </div>
-        <div class="property-price-history-period" aria-label="조회 기간">
-          <button type="button" data-price-history-years="1">1년</button>
-          <button type="button" class="is-active" data-price-history-years="3">3년</button>
-        </div>
-      </div>
-      <div class="property-price-history-legend" aria-hidden="true">
-        <span class="price"><i></i>매매가</span>
-        <span class="volume"><i></i>거래량</span>
-      </div>
-      <div class="property-price-history-chart" role="img" aria-label="매매가 평균과 거래량 추이">
-        <p class="property-price-history-status">가격 추이를 불러오고 있어요.</p>
+        ${renderPriceCard("평균 실거래가", "")}
+        ${renderPriceCard("최근 실거래가", "")}
       </div>
     </section>
 
@@ -2542,8 +1853,6 @@ function renderPropertyDetail(item) {
       <div class="property-detail-description-slot">${escapeHtml(item.description || "")}</div>
     </section>
   `;
-
-  initializePropertyPriceHistory(item.id);
 }
 
 function renderPropertyMediaSlot(item, propertyName) {
@@ -2610,161 +1919,6 @@ function renderPriceCard(label, value, primary = false) {
       <strong>${renderDetailText(value)}</strong>
     </div>
   `;
-}
-
-function initializePropertyPriceHistory(propertyId) {
-  const section = document.querySelector("[data-price-history-property-id]");
-  if (!section || String(section.dataset.priceHistoryPropertyId) !== String(propertyId)) return;
-
-  section.querySelectorAll("[data-price-history-years]").forEach(button => {
-    button.addEventListener("click", () => {
-      const years = Number(button.dataset.priceHistoryYears);
-      section.querySelectorAll("[data-price-history-years]").forEach(candidate => {
-        candidate.classList.toggle("is-active", candidate === button);
-      });
-      loadPropertyPriceHistory(propertyId, years);
-    });
-  });
-
-  loadPropertyPriceHistory(propertyId, 3);
-}
-
-async function loadPropertyPriceHistory(propertyId, years) {
-  const cacheKey = `${propertyId}:${years}`;
-  const chart = getActivePriceHistoryChart(propertyId);
-  if (!chart) return;
-
-  chart.innerHTML = '<p class="property-price-history-status">가격 추이를 불러오고 있어요.</p>';
-
-  try {
-    let rows = propertyPriceHistoryCache.get(cacheKey);
-    if (!rows) {
-      const response = await fetch(
-        `/api/map/properties/${encodeURIComponent(propertyId)}/price-history?years=${years}`
-      );
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      rows = await response.json();
-      propertyPriceHistoryCache.set(cacheKey, rows);
-    }
-
-    const activeChart = getActivePriceHistoryChart(propertyId);
-    if (!activeChart) return;
-    renderPropertyPriceHistoryChart(activeChart, rows, years);
-  } catch (error) {
-    console.error("매매가 추이를 불러오지 못했습니다:", error);
-    const activeChart = getActivePriceHistoryChart(propertyId);
-    if (activeChart) {
-      activeChart.innerHTML = '<p class="property-price-history-status is-error">가격 추이를 불러오지 못했어요.</p>';
-    }
-  }
-}
-
-function getActivePriceHistoryChart(propertyId) {
-  const section = document.querySelector("[data-price-history-property-id]");
-  if (!section || String(section.dataset.priceHistoryPropertyId) !== String(propertyId)) return null;
-  return section.querySelector(".property-price-history-chart");
-}
-
-function renderPropertyPriceHistoryChart(container, rows, years) {
-  const series = buildMonthlyPriceHistory(rows, years);
-  const tradedMonths = series.filter(item => item.averagePrice > 0);
-
-  if (!tradedMonths.length) {
-    container.innerHTML = '<p class="property-price-history-status">해당 기간의 실거래 내역이 없어요.</p>';
-    return;
-  }
-
-  const width = 380;
-  const height = 240;
-  const left = 48;
-  const right = 12;
-  const top = 12;
-  const priceBottom = 158;
-  const volumeTop = 174;
-  const volumeBottom = 205;
-  const plotWidth = width - left - right;
-  const prices = tradedMonths.map(item => item.averagePrice);
-  const rawMin = Math.min(...prices);
-  const rawMax = Math.max(...prices);
-  const padding = Math.max((rawMax - rawMin) * 0.12, rawMax * 0.03, 1);
-  const minPrice = Math.max(0, rawMin - padding);
-  const maxPrice = rawMax + padding;
-  const maxTrades = Math.max(...series.map(item => item.tradeCount), 1);
-  const x = index => left + (series.length === 1 ? plotWidth / 2 : index * plotWidth / (series.length - 1));
-  const y = price => top + (maxPrice - price) / (maxPrice - minPrice || 1) * (priceBottom - top);
-  const grid = Array.from({ length: 4 }, (_, index) => {
-    const ratio = index / 3;
-    const gridY = top + ratio * (priceBottom - top);
-    const value = maxPrice - ratio * (maxPrice - minPrice);
-    return `<line x1="${left}" y1="${gridY}" x2="${width - right}" y2="${gridY}"/>`
-      + `<text x="${left - 7}" y="${gridY + 4}" text-anchor="end">${escapeHtml(formatChartPrice(value))}</text>`;
-  }).join("");
-  const linePoints = series
-    .map((item, index) => item.averagePrice > 0 ? `${x(index)},${y(item.averagePrice)}` : null)
-    .filter(Boolean)
-    .join(" ");
-  const bars = series.map((item, index) => {
-    if (!item.tradeCount) return "";
-    const barHeight = Math.max(3, item.tradeCount / maxTrades * (volumeBottom - volumeTop));
-    return `<rect x="${x(index) - 2}" y="${volumeBottom - barHeight}" width="4" height="${barHeight}" rx="2">`
-      + `<title>${escapeHtml(formatHistoryTooltip(item))}</title></rect>`;
-  }).join("");
-  const points = series.map((item, index) => {
-    if (!item.averagePrice) return "";
-    return `<circle cx="${x(index)}" cy="${y(item.averagePrice)}" r="4">`
-      + `<title>${escapeHtml(formatHistoryTooltip(item))}</title></circle>`;
-  }).join("");
-  const tickIndexes = [...new Set([0, ...Array.from({ length: 3 }, (_, index) => (
-    Math.round((index + 1) * (series.length - 1) / 4)
-  )), series.length - 1])];
-  const labels = tickIndexes.map(index => (
-    `<text x="${x(index)}" y="228" text-anchor="middle">${escapeHtml(formatHistoryMonth(series[index].month))}</text>`
-  )).join("");
-
-  container.innerHTML = `
-    <svg viewBox="0 0 ${width} ${height}" aria-hidden="true">
-      <g class="property-price-history-grid">${grid}</g>
-      <text class="property-price-history-volume-label" x="${left - 7}" y="${volumeTop + 5}" text-anchor="end">거래량</text>
-      <g class="property-price-history-bars">${bars}</g>
-      <polyline class="property-price-history-line" points="${linePoints}"/>
-      <g class="property-price-history-points">${points}</g>
-      <g class="property-price-history-labels">${labels}</g>
-    </svg>
-  `;
-}
-
-function buildMonthlyPriceHistory(rows, years) {
-  const byMonth = new Map((Array.isArray(rows) ? rows : []).map(row => [
-    String(row.month || ""),
-    {
-      averagePrice: Number(row.average_price || 0),
-      tradeCount: Number(row.trade_count || 0)
-    }
-  ]));
-  const monthCount = years * 12;
-  const current = new Date();
-  const start = new Date(current.getFullYear(), current.getMonth() - monthCount + 1, 1);
-
-  return Array.from({ length: monthCount }, (_, index) => {
-    const date = new Date(start.getFullYear(), start.getMonth() + index, 1);
-    const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-    const value = byMonth.get(month) || {};
-    return { month, averagePrice: value.averagePrice || 0, tradeCount: value.tradeCount || 0 };
-  });
-}
-
-function formatHistoryTooltip(item) {
-  return `${formatHistoryMonth(item.month)}  평균 ${formatOptionalPrice(item.averagePrice) || "-"}  거래 ${item.tradeCount.toLocaleString()}건`;
-}
-
-function formatHistoryMonth(month) {
-  const [year, value] = String(month).split("-");
-  return `${String(year).slice(-2)}.${value}`;
-}
-
-function formatChartPrice(price) {
-  const eok = Number(price) / 100000000;
-  return `${Number(eok.toFixed(eok >= 10 ? 0 : 1))}억`;
 }
 
 function renderDetailText(value) {
@@ -2853,42 +2007,6 @@ function getAverageValue(items, key) {
   if (!values.length) return 0;
 
   return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function getRecentTransactions(items, months) {
-  const cutoff = new Date();
-  cutoff.setHours(0, 0, 0, 0);
-  cutoff.setMonth(cutoff.getMonth() - months);
-
-  return items.filter(item => {
-    const contractDate = parseContractDate(item.contract_date);
-    return contractDate && contractDate >= cutoff;
-  });
-}
-
-function getLatestTransaction(items) {
-  return items.reduce((latest, item) => {
-    const itemDate = parseContractDate(item.contract_date);
-    if (!itemDate) return latest;
-
-    const latestDate = parseContractDate(latest?.contract_date);
-    return !latestDate || itemDate > latestDate ? item : latest;
-  }, null);
-}
-
-function parseContractDate(value) {
-  const normalized = String(value ?? "").trim();
-  if (!normalized) return null;
-
-  const date = new Date(`${normalized.slice(0, 10)}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function formatContractDate(value) {
-  const date = parseContractDate(value);
-  if (!date) return "";
-
-  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function getRoundedPyeong(area) {
@@ -3249,11 +2367,7 @@ function closeAllInfoPopups() {
 =========================== */
 
 function getAppZoomStage(zoom) {
-  return zoom - APP_MIN_ZOOM;
-}
-
-function getMapZoomFromStage(stage) {
-  return stage + APP_MIN_ZOOM;
+  return zoom - APP_START_ZOOM + 1;
 }
 
 function moveMapTo(position, zoom) {
