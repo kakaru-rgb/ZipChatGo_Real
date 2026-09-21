@@ -35,6 +35,10 @@ public class MapDataService {
             "id", "title", "building_name", "property_type", "sale_price", "deposit",
             "monthly_rent", "maintenance_fee", "exclusive_area", "floor", "built_year",
             "address", "district", "latitude", "longitude", "contract_date");
+    private static final List<String> POI_KEYWORD_FIELDS = List.of(
+            "name", "category", "subcategory", "source_type", "road_address");
+    private static final List<String> POI_REGION_FIELDS = List.of(
+            "road_address", "province", "city", "town");
     private static final Map<String, String> BUNDANG_LEGAL_DONG_NAMES = Map.ofEntries(
             Map.entry("41135101", "분당동"),
             Map.entry("41135102", "수내동"),
@@ -126,6 +130,56 @@ public class MapDataService {
 
     public MapDataResult getPois() {
         return queryOrFallback("poi", POIS_SQL, fallbackPois);
+    }
+
+    public PoiSearchResult searchPois(
+            String category,
+            String subcategory,
+            String region,
+            String keyword,
+            Double latitude,
+            Double longitude,
+            Integer radiusMeters,
+            int limit) {
+        MapDataResult allPois = getPois();
+        String normalizedCategory = normalize(category);
+        String normalizedSubcategory = normalize(subcategory);
+        String normalizedRegion = normalize(region);
+        String normalizedKeyword = normalize(keyword);
+        boolean distanceSearch = latitude != null && longitude != null;
+
+        List<PoiDistance> matches = searchablePois(allPois.data()).stream()
+                .filter(poi -> normalizedCategory.isEmpty()
+                        || normalizedCategory.equals(normalize(poi.get("category"))))
+                .filter(poi -> normalizedSubcategory.isEmpty()
+                        || normalize(poi.get("subcategory")).contains(normalizedSubcategory))
+                .filter(poi -> normalizedRegion.isEmpty()
+                        || matchesAnyField(poi, POI_REGION_FIELDS, normalizedRegion))
+                .filter(poi -> normalizedKeyword.isEmpty()
+                        || matchesAnyField(poi, POI_KEYWORD_FIELDS, normalizedKeyword))
+                .map(poi -> new PoiDistance(
+                        poi,
+                        distanceSearch
+                                ? distanceMeters(
+                                        latitude,
+                                        longitude,
+                                        coordinateOf(poi, "latitude"),
+                                        coordinateOf(poi, "longitude"))
+                                : null))
+                .filter(match -> !distanceSearch || match.distanceMeters() != null)
+                .filter(match -> radiusMeters == null
+                        || match.distanceMeters() != null
+                        && match.distanceMeters() <= radiusMeters)
+                .sorted(distanceSearch
+                        ? Comparator.comparingDouble(PoiDistance::distanceMeters)
+                        : Comparator.comparing(match -> normalize(match.poi().get("name"))))
+                .toList();
+
+        List<Map<String, Object>> pois = matches.stream()
+                .limit(limit)
+                .map(this::summarizePoi)
+                .toList();
+        return new PoiSearchResult(pois, matches.size(), allPois.source());
     }
 
     public PropertySearchResult searchProperties(
@@ -308,6 +362,36 @@ public class MapDataService {
         return value instanceof Number number ? number.longValue() : Long.MAX_VALUE;
     }
 
+    private boolean matchesAnyField(
+            Map<String, Object> item,
+            List<String> fields,
+            String expected) {
+        return fields.stream()
+                .map(item::get)
+                .map(this::normalize)
+                .anyMatch(value -> value.contains(expected));
+    }
+
+    private Double distanceMeters(
+            double originLatitude,
+            double originLongitude,
+            double targetLatitude,
+            double targetLongitude) {
+        if (!Double.isFinite(targetLatitude) || !Double.isFinite(targetLongitude)) {
+            return null;
+        }
+        double earthRadiusMeters = 6_371_000.0;
+        double latitudeDelta = Math.toRadians(targetLatitude - originLatitude);
+        double longitudeDelta = Math.toRadians(targetLongitude - originLongitude);
+        double originLatitudeRadians = Math.toRadians(originLatitude);
+        double targetLatitudeRadians = Math.toRadians(targetLatitude);
+        double haversine = Math.sin(latitudeDelta / 2) * Math.sin(latitudeDelta / 2)
+                + Math.cos(originLatitudeRadians) * Math.cos(targetLatitudeRadians)
+                * Math.sin(longitudeDelta / 2) * Math.sin(longitudeDelta / 2);
+        return earthRadiusMeters * 2 * Math.atan2(
+                Math.sqrt(haversine), Math.sqrt(1 - haversine));
+    }
+
     private Long propertyIdOf(Map<String, Object> property) {
         Object value = property.get("id");
         if (value instanceof Number number) {
@@ -371,6 +455,51 @@ public class MapDataService {
         return summary;
     }
 
+    private Map<String, Object> summarizePoi(PoiDistance match) {
+        Map<String, Object> poi = match.poi();
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("id", poi.get("poi_id"));
+        summary.put("name", poi.get("name"));
+        summary.put("category", poi.get("category"));
+        summary.put("subcategory", poi.get("subcategory"));
+        summary.put("address", poi.get("road_address"));
+        summary.put("latitude", poi.get("latitude"));
+        summary.put("longitude", poi.get("longitude"));
+        if (poi.get("bus_routes") != null) {
+            summary.put("bus_routes", poi.get("bus_routes"));
+        }
+        if (poi.get("lines") != null) {
+            summary.put("lines", poi.get("lines"));
+        }
+        if (match.distanceMeters() != null) {
+            summary.put("distance_m", Math.round(match.distanceMeters()));
+        }
+        return summary;
+    }
+
+    private List<Map<String, Object>> searchablePois(List<Map<String, Object>> pois) {
+        List<Map<String, Object>> combined = new ArrayList<>(pois);
+        Map<String, List<Map<String, Object>>> groupedStations = new LinkedHashMap<>();
+        for (Map<String, Object> station : transitStations) {
+            String normalizedName = normalizeStationName(station.get("name"));
+            groupedStations.computeIfAbsent(normalizedName, ignored -> new ArrayList<>()).add(station);
+        }
+        groupedStations.forEach((normalizedName, entries) -> {
+            Map<String, Object> station = summarizeStation(normalizedName, entries);
+            Map<String, Object> poi = new LinkedHashMap<>();
+            poi.put("poi_id", "SUBWAY_" + normalizedName);
+            poi.put("source_type", "subway");
+            poi.put("name", station.get("name"));
+            poi.put("category", "교통");
+            poi.put("subcategory", "지하철역");
+            poi.put("latitude", station.get("latitude"));
+            poi.put("longitude", station.get("longitude"));
+            poi.put("lines", station.get("lines"));
+            combined.add(poi);
+        });
+        return combined;
+    }
+
     private String normalize(Object value) {
         return value == null ? "" : value.toString().trim().toLowerCase(Locale.ROOT);
     }
@@ -397,6 +526,13 @@ public class MapDataService {
             List<Map<String, Object>> properties,
             List<Long> missingIds,
             MapDataSource source) {}
+
+    public record PoiSearchResult(
+            List<Map<String, Object>> pois,
+            int totalCount,
+            MapDataSource source) {}
+
+    private record PoiDistance(Map<String, Object> poi, Double distanceMeters) {}
 
     public record TransitStationSearchResult(
             List<Map<String, Object>> stations,

@@ -102,6 +102,75 @@ GET_PROPERTIES_BY_IDS_TOOL = {
     "strict": True,
 }
 
+SEARCH_POI_TOOL = {
+    "type": "function",
+    "name": "search_poi",
+    "description": (
+        "집찾GO의 실제 주변 시설 데이터에서 POI를 검색합니다. 지역명 또는 현재 App State의 "
+        "지도 중심/선택 매물 좌표를 사용해 공공기관, 교육, 교통, 의료, 중개 시설을 찾을 때 "
+        "사용합니다. 실제 데이터에 없는 세부 유형은 결과가 0건일 수 있습니다. 매물 검색에는 "
+        "사용하지 않습니다."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "category": {
+                "type": ["string", "null"],
+                "enum": ["공공기관", "교육", "교통", "의료", "중개", None],
+                "description": "실제 POI 대분류. 조건이 없으면 null입니다.",
+            },
+            "subcategory": {
+                "type": ["string", "null"],
+                "description": (
+                    "세부 유형 검색어. 예: 초등학교, 중학교, 고등학교, 버스정류장, "
+                    "지하철역, 병원, 종합병원, 행정복지센터. 조건이 없으면 null입니다."
+                ),
+                "maxLength": 50,
+            },
+            "region": {
+                "type": ["string", "null"],
+                "description": "동·시·군·구 등 주소 기반 지역명. 좌표 기준 검색이면 null입니다.",
+                "maxLength": 100,
+            },
+            "keyword": {
+                "type": ["string", "null"],
+                "description": "시설명이나 추가 검색어. 조건이 없으면 null입니다.",
+                "maxLength": 100,
+            },
+            "lat": {
+                "type": ["number", "null"],
+                "description": "가까운 시설 검색의 기준 위도. 좌표 검색이 아니면 null입니다.",
+                "minimum": -90,
+                "maximum": 90,
+            },
+            "lng": {
+                "type": ["number", "null"],
+                "description": "가까운 시설 검색의 기준 경도. 좌표 검색이 아니면 null입니다.",
+                "minimum": -180,
+                "maximum": 180,
+            },
+            "radius": {
+                "type": ["integer", "null"],
+                "description": "좌표로 검색할 반경(미터). 좌표 검색이 아니면 null입니다.",
+                "minimum": 1,
+                "maximum": 50000,
+            },
+            "limit": {
+                "type": "integer",
+                "description": "반환할 POI 수. 사용자가 명시한 개수를 우선합니다.",
+                "minimum": 1,
+                "maximum": 20,
+            },
+        },
+        "required": [
+            "category", "subcategory", "region", "keyword",
+            "lat", "lng", "radius", "limit",
+        ],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
 SET_PRESENTED_PROPERTIES_TOOL = {
     "type": "function",
     "name": "set_presented_properties",
@@ -388,6 +457,7 @@ GET_ADJACENT_LEGAL_DONGS_TOOL = {
 AGENT_TOOLS = [
     SEARCH_PROPERTIES_TOOL,
     GET_PROPERTIES_BY_IDS_TOOL,
+    SEARCH_POI_TOOL,
     SET_PRESENTED_PROPERTIES_TOOL,
     SEARCH_REAL_ESTATE_LAW_TOOL,
     FIND_TRANSIT_STATION_TOOL,
@@ -404,6 +474,9 @@ AGENT_TOOLS = [
 ]
 
 UI_ACTION_INSTRUCTIONS = """
+Use search_poi for questions about nearby or regional facilities. The supported broad categories are 공공기관, 교육, 교통, 의료, and 중개. Use subcategory or keyword for actual finer types such as schools, bus stops, subway stations, hospitals, and public offices. A requested finer type may legitimately return zero results; never claim that unavailable types exist.
+For 'this area' prefer selected_region when present, otherwise use current_legal_dong or map_center. For 'around this property' use selected_property latitude and longitude from App State. Do not invent coordinates. Natural-language interpretation belongs to Tool Calling; do not ask Python to classify phrases such as nearby or closest.
+When the user asks only how many POIs exist, answer from total_count without listing every returned POI. For nearby lists, provide only the requested count with name, distance when returned, and minimal location information. If total_count is zero, say no matching POI was found and do not switch to another region or category unless the user explicitly requested a fallback.
 For questions about the current favorite-property list, its prices, areas, locations, details, or comparison, call get_properties_by_ids with the favorite_property_ids from App State. If that list is empty, explain that this session has no favorites without calling the tool. Never invent or add IDs. For a general regional property search, continue to use search_properties. When the user explicitly asks to show favorites on the map, reuse fit_bounds and highlight_properties with the properties returned by get_properties_by_ids.
 Match the favorite-property answer detail to the question. For a count question, answer only the count from favorite_property_ids and do not call get_properties_by_ids or print property details. For a simple list question, list only property names or the minimum identifying information; omit price, area, and full address unless requested. For a detail question, provide the requested details. For a comparison question, state the result and only the fields needed for that comparison; do not dump every field of every favorite.
 Use add_favorites or remove_favorites only when the user explicitly asks to change the favorite list. Interpret singular or plural references from App State, recent_property_ids, and tool results. Preserve distinct property IDs even when their names are identical. If the referenced IDs are not clear from that context, ask the user instead of guessing. Favorite-list questions such as showing, counting, or comparing are reads and must never produce favorite mutation actions.
@@ -743,6 +816,7 @@ class OpenAIProvider:
         recent_context: dict[str, Any] | None = None,
         search_properties: ToolHandler | None = None,
         get_properties_by_ids: ToolHandler | None = None,
+        search_poi: ToolHandler | None = None,
         find_transit_station: ToolHandler | None = None,
         get_adjacent_legal_dongs: ToolHandler | None = None,
         search_real_estate_law: ToolHandler | None = None,
@@ -794,6 +868,7 @@ class OpenAIProvider:
         if (
             search_properties is None
             and get_properties_by_ids is None
+            and search_poi is None
             and find_transit_station is None
             and get_adjacent_legal_dongs is None
             and search_real_estate_law is None
@@ -848,6 +923,8 @@ class OpenAIProvider:
         excluded_tool_names: set[str] = set()
         if search_properties is None:
             excluded_tool_names.add("search_properties")
+        if search_poi is None:
+            excluded_tool_names.add("search_poi")
         if (
             get_properties_by_ids is None
             or favorite_count_requested
@@ -1063,6 +1140,9 @@ class OpenAIProvider:
                             for item in favorite_properties
                             if str(item.get("id", "")).isdigit()
                         )
+                elif function_call.name == "search_poi" and search_poi:
+                    arguments = json.loads(function_call.arguments)
+                    result = search_poi(arguments)
                 elif function_call.name == "set_presented_properties":
                     arguments = json.loads(function_call.arguments)
                     raw_ids = arguments.get("property_ids", [])

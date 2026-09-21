@@ -9,6 +9,7 @@ import com.onrender.zipchatgo.map.MapDataService.GeoBounds;
 import com.onrender.zipchatgo.map.MapDataService.MapDataResult;
 import com.onrender.zipchatgo.map.MapDataService.PropertySearchResult;
 import com.onrender.zipchatgo.map.MapDataService.PropertiesByIdsResult;
+import com.onrender.zipchatgo.map.MapDataService.PoiSearchResult;
 import com.onrender.zipchatgo.map.MapDataService.TransitStationSearchResult;
 
 import org.springframework.http.CacheControl;
@@ -151,6 +152,43 @@ public class MapDataController {
     @GetMapping(value = "/pois", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<List<Map<String, Object>>> pois() {
         return jsonResponse(mapDataService.getPois());
+    }
+
+    @GetMapping(value = "/pois/search", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> searchPois(
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String subcategory,
+            @RequestParam(required = false) String region,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Double lat,
+            @RequestParam(required = false) Double lng,
+            @RequestParam(required = false) Integer radius,
+            @RequestParam(defaultValue = "5") int limit) {
+        boolean oneCoordinateMissing = (lat == null) != (lng == null);
+        if (oneCoordinateMissing
+                || lat != null && (lat < -90 || lat > 90)
+                || lng != null && (lng < -180 || lng > 180)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "lat and lng must be valid coordinates");
+        }
+        if (radius != null && (lat == null || radius < 1 || radius > 50_000)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "radius requires coordinates and must be between 1 and 50000");
+        }
+        if (limit < 1 || limit > 20) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit must be between 1 and 20");
+        }
+
+        PoiSearchResult result = mapDataService.searchPois(
+                category, subcategory, region, keyword, lat, lng, radius, limit);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("total_count", result.totalCount());
+        body.put("pois", result.pois());
+
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("X-Map-Data-Source", result.source().headerValue())
+                .body(body);
     }
 
     private ResponseEntity<List<Map<String, Object>>> jsonResponse(MapDataResult result) {

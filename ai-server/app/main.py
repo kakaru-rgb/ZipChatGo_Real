@@ -27,6 +27,7 @@ from app.tools.legal_dong_adjacency import (
     LegalDongAdjacencyTool,
 )
 from app.tools.property_search import PropertySearchError, PropertySearchTool
+from app.tools.poi_search import PoiSearchError, PoiSearchTool
 from app.tools.real_estate_law import (
     RealEstateLawSearchTool,
     RealEstateLawSearchToolError,
@@ -67,6 +68,11 @@ def get_transit_station_tool() -> TransitStationTool:
 
 
 @lru_cache
+def get_poi_search_tool() -> PoiSearchTool:
+    return PoiSearchTool(get_spring_server_base_url())
+
+
+@lru_cache
 def get_legal_dong_adjacency_tool() -> LegalDongAdjacencyTool:
     return LegalDongAdjacencyTool()
 
@@ -92,6 +98,7 @@ def agent_chat(
     request: ChatRequest,
     provider: LLMProvider = Depends(get_openai_provider),
     property_search: PropertySearchTool = Depends(get_property_search_tool),
+    poi_search: PoiSearchTool = Depends(get_poi_search_tool),
     transit_station: TransitStationTool = Depends(get_transit_station_tool),
     legal_dong_adjacency: LegalDongAdjacencyTool = Depends(
         get_legal_dong_adjacency_tool
@@ -109,6 +116,7 @@ def agent_chat(
             recent_context=request.recent_context.model_dump(),
             search_properties=property_search.search,
             get_properties_by_ids=property_search.get_by_ids,
+            search_poi=poi_search.search,
             find_transit_station=transit_station.search,
             get_adjacent_legal_dongs=legal_dong_adjacency.lookup,
             search_real_estate_law=real_estate_law_search.search,
@@ -125,6 +133,7 @@ def agent_chat(
         ) from exception
     except (
         PropertySearchError,
+        PoiSearchError,
         TransitStationSearchError,
         LegalDongAdjacencyError,
         LawRetrievalError,

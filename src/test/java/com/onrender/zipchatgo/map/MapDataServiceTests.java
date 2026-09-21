@@ -4,29 +4,45 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import tools.jackson.databind.ObjectMapper;
 
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MapDataServiceTests {
+
+    private JdbcTemplate jdbcTemplate;
+    private MapDataService service;
+
+    @BeforeAll
+    void setUpService() {
+        jdbcTemplate = mock(JdbcTemplate.class);
+        service = new MapDataService(jdbcTemplate, new ObjectMapper());
+    }
+
+    @BeforeEach
+    void resetJdbcTemplate() {
+        reset(jdbcTemplate);
+    }
 
     @SuppressWarnings("unchecked")
     @Test
     void searchesPropertiesWithStationNameTypeAndMaximumPrice() {
-        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.query(anyString(), any(RowMapper.class))).thenReturn(List.of(
                 property(1L, "정자아파트", "아파트", 750_000_000L, "성남시 분당구 정자동"),
                 property(2L, "정자고가아파트", "아파트", 900_000_000L, "성남시 분당구 정자동"),
                 property(3L, "판교빌라", "빌라", 700_000_000L, "성남시 분당구 백현동")));
-        MapDataService service = new MapDataService(jdbcTemplate, new ObjectMapper());
-
         MapDataService.PropertySearchResult result = service.searchProperties(
                 "정자역", "아파트", 800_000_000L, null, 10, null);
 
@@ -38,14 +54,11 @@ class MapDataServiceTests {
 
     @Test
     void searchesPropertiesInsideCurrentMapBounds() {
-        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.query(anyString(), any(RowMapper.class))).thenReturn(List.of(
                 property(1L, "화면 안 아파트", "아파트", 750_000_000L,
                         "성남시 분당구 백현동", 37.394, 127.111),
                 property(2L, "화면 밖 아파트", "아파트", 700_000_000L,
                         "성남시 분당구 정자동", 37.370, 127.111)));
-        MapDataService service = new MapDataService(jdbcTemplate, new ObjectMapper());
-
         MapDataService.PropertySearchResult result = service.searchProperties(
                 null,
                 "아파트",
@@ -60,14 +73,11 @@ class MapDataServiceTests {
 
     @Test
     void searchesPropertiesBySelectedLegalDongCode() {
-        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.query(anyString(), any(RowMapper.class))).thenReturn(List.of(
                 property(1L, "판교동 아파트", "아파트", 750_000_000L,
                         "성남시 분당구 판교동"),
                 property(2L, "삼평동 아파트", "아파트", 700_000_000L,
                         "성남시 분당구 삼평동")));
-        MapDataService service = new MapDataService(jdbcTemplate, new ObjectMapper());
-
         MapDataService.PropertySearchResult result = service.searchProperties(
                 null, "아파트", null, "41135108", 10, null);
 
@@ -78,12 +88,9 @@ class MapDataServiceTests {
     @SuppressWarnings("unchecked")
     @Test
     void getsPropertiesByIdsInRequestedOrderAndReportsMissingIds() {
-        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.query(anyString(), any(RowMapper.class))).thenReturn(List.of(
                 property(427L, "first", "apartment", 780_000_000L, "district-a"),
                 property(903L, "second", "villa", 650_000_000L, "district-b")));
-        MapDataService service = new MapDataService(jdbcTemplate, new ObjectMapper());
-
         MapDataService.PropertiesByIdsResult result =
                 service.getPropertiesByIds(List.of(903L, 999L, 427L));
 
@@ -98,9 +105,6 @@ class MapDataServiceTests {
     @SuppressWarnings("unchecked")
     @Test
     void searchesAndMergesTransitStationEntriesByStationName() {
-        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
-        MapDataService service = new MapDataService(jdbcTemplate, new ObjectMapper());
-
         MapDataService.TransitStationSearchResult result =
                 service.searchTransitStations("정자역", 5);
 
@@ -109,6 +113,38 @@ class MapDataServiceTests {
         assertThat(result.stations().getFirst().get("name")).isEqualTo("정자역");
         List<String> lines = (List<String>) result.stations().getFirst().get("lines");
         assertThat(lines).contains("신분당선", "분당선");
+    }
+
+    @Test
+    void searchesPoisByActualCategorySubtypeAndRegion() {
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class))).thenReturn(List.of(
+                poi("H1", "정자종합병원", "의료", "종합병원", "성남시 분당구 정자동", 37.37, 127.11),
+                poi("H2", "수내병원", "의료", "병원", "성남시 분당구 수내동", 37.38, 127.12),
+                poi("S1", "정자초등학교", "교육", "초등학교", "성남시 분당구 정자동", 37.371, 127.111)));
+        MapDataService.PoiSearchResult result = service.searchPois(
+                "의료", "병원", "정자동", null, null, null, null, 5);
+
+        assertThat(result.totalCount()).isEqualTo(1);
+        assertThat(result.pois()).hasSize(1);
+        assertThat(result.pois().getFirst())
+                .containsEntry("id", "H1")
+                .containsEntry("name", "정자종합병원")
+                .containsEntry("category", "의료")
+                .doesNotContainKey("distance_m");
+    }
+
+    @Test
+    void searchesPoisByDistanceAndReturnsNearestFirst() {
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class))).thenReturn(List.of(
+                poi("B2", "먼 정류장", "교통", "버스정류장", "성남시 분당구 정자동", 37.380, 127.110),
+                poi("B1", "가까운 정류장", "교통", "버스정류장", "성남시 분당구 정자동", 37.371, 127.110)));
+        MapDataService.PoiSearchResult result = service.searchPois(
+                "교통", "버스정류장", null, null, 37.370, 127.110, 2_000, 1);
+
+        assertThat(result.totalCount()).isEqualTo(2);
+        assertThat(result.pois()).hasSize(1);
+        assertThat(result.pois().getFirst().get("id")).isEqualTo("B1");
+        assertThat((Long) result.pois().getFirst().get("distance_m")).isBetween(100L, 120L);
     }
 
     private Map<String, Object> property(
@@ -137,5 +173,27 @@ class MapDataServiceTests {
         property.put("latitude", latitude);
         property.put("longitude", longitude);
         return property;
+    }
+
+    private Map<String, Object> poi(
+            String id,
+            String name,
+            String category,
+            String subcategory,
+            String address,
+            double latitude,
+            double longitude) {
+        Map<String, Object> poi = new LinkedHashMap<>();
+        poi.put("poi_id", id);
+        poi.put("name", name);
+        poi.put("category", category);
+        poi.put("subcategory", subcategory);
+        poi.put("road_address", address);
+        poi.put("province", "경기도");
+        poi.put("city", "성남시");
+        poi.put("town", address.substring(address.lastIndexOf(' ') + 1));
+        poi.put("latitude", latitude);
+        poi.put("longitude", longitude);
+        return poi;
     }
 }

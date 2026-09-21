@@ -199,7 +199,13 @@ function getAiAppState() {
       sale_price: Number.isFinite(Number(selectedProperty.sale_price))
         ? Number(selectedProperty.sale_price)
         : null,
-      address: selectedProperty.address || null
+      address: selectedProperty.address || null,
+      latitude: Number.isFinite(Number(selectedProperty.latitude))
+        ? Number(selectedProperty.latitude)
+        : null,
+      longitude: Number.isFinite(Number(selectedProperty.longitude))
+        ? Number(selectedProperty.longitude)
+        : null
     } : null,
     favorite_property_ids: Array.from(favoritePropertyIds, String),
     filters: {

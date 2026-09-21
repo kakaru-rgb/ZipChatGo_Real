@@ -1,6 +1,6 @@
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -38,6 +38,8 @@ class SelectedPropertySummary(BaseModel):
     property_type: str | None = Field(default=None, max_length=30)
     sale_price: int | None = Field(default=None, ge=0)
     address: str | None = Field(default=None, max_length=200)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
 
 
 class AppState(BaseModel):
@@ -225,6 +227,30 @@ class TransitStationSearchArguments(BaseModel):
 class TransitStationSearchResult(BaseModel):
     total_count: int = Field(ge=0)
     stations: list[dict[str, Any]]
+
+
+class PoiSearchArguments(BaseModel):
+    category: Literal["공공기관", "교육", "교통", "의료", "중개"] | None = None
+    subcategory: str | None = Field(default=None, min_length=1, max_length=50)
+    region: str | None = Field(default=None, min_length=1, max_length=100)
+    keyword: str | None = Field(default=None, min_length=1, max_length=100)
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lng: float | None = Field(default=None, ge=-180, le=180)
+    radius: int | None = Field(default=None, ge=1, le=50_000)
+    limit: int = Field(default=5, ge=1, le=20)
+
+    @model_validator(mode="after")
+    def validate_coordinates(self) -> "PoiSearchArguments":
+        if (self.lat is None) != (self.lng is None):
+            raise ValueError("lat and lng must be provided together")
+        if self.radius is not None and self.lat is None:
+            raise ValueError("radius requires lat and lng")
+        return self
+
+
+class PoiSearchResult(BaseModel):
+    total_count: int = Field(ge=0)
+    pois: list[dict[str, Any]]
 
 
 class LawSearchArguments(BaseModel):
