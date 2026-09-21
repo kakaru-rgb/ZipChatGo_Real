@@ -1,5 +1,6 @@
 package com.onrender.zipchatgo.map;
 
+import java.awt.geom.Path2D;
 import java.io.IOException;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -29,6 +30,7 @@ public class MapDataService {
     private static final String PROPERTIES_RESOURCE = "static/data/properties.json";
     private static final String POIS_RESOURCE = "static/data/poi_database.json";
     private static final String TRANSIT_POINTS_RESOURCE = "static/data/transit_points_bundang.json";
+    private static final String LEGAL_DONG_RESOURCE = "static/data/bundang_legal_dong.geojson";
     private static final List<String> PROPERTY_SEARCH_FIELDS = List.of(
             "title", "description", "building_name", "address", "district", "lot_number");
     private static final List<String> PROPERTY_SUMMARY_FIELDS = List.of(
@@ -59,7 +61,7 @@ public class MapDataService {
             Map.entry("41135117", "석운동"),
             Map.entry("41135118", "하산운동"));
 
-    private static final String PROPERTIES_SQL = """
+    private static final String PROPERTIES_SQL_TEMPLATE = """
             SELECT id, title, description, building_name, property_type,
                    sale_price, deposit, monthly_rent, maintenance_fee,
                    exclusive_area, floor, built_year, address, district,
@@ -67,13 +69,15 @@ public class MapDataService {
                    contract_date, created_at, updated_at
               FROM properties
              WHERE contract_date >= DATE_SUB(
-                       DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01'), INTERVAL 12 MONTH
+                       DATE_FORMAT(CURRENT_DATE(), '%%Y-%%m-01'), INTERVAL %d MONTH
                    )
                AND contract_date < DATE_ADD(
                        LAST_DAY(CURRENT_DATE()), INTERVAL 1 DAY
                    )
-             ORDER BY id
+            ORDER BY id
             """;
+    private static final String PROPERTIES_SQL = PROPERTIES_SQL_TEMPLATE.formatted(12);
+    private static final String TRANSACTION_PROPERTIES_SQL = PROPERTIES_SQL_TEMPLATE.formatted(36);
 
     private static final String POIS_SQL = """
             SELECT poi_id, source_type, name, category, subcategory,
@@ -115,6 +119,7 @@ public class MapDataService {
     private final List<Map<String, Object>> fallbackProperties;
     private final List<Map<String, Object>> fallbackPois;
     private final List<Map<String, Object>> transitStations;
+    private final Map<String, Path2D.Double> legalDongPolygons;
 
     public MapDataService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
@@ -122,6 +127,7 @@ public class MapDataService {
         this.fallbackProperties = readFallback(PROPERTIES_RESOURCE);
         this.fallbackPois = readFallback(POIS_RESOURCE);
         this.transitStations = readTransitStations();
+        this.legalDongPolygons = readLegalDongPolygons();
     }
 
     public MapDataResult getProperties() {
@@ -130,6 +136,11 @@ public class MapDataService {
 
     public MapDataResult getPois() {
         return queryOrFallback("poi", POIS_SQL, fallbackPois);
+    }
+
+    public MapDataResult getMapPois() {
+        MapDataResult result = getPois();
+        return new MapDataResult(searchablePois(result.data()), result.source());
     }
 
     public PoiSearchResult searchPois(
@@ -141,12 +152,27 @@ public class MapDataService {
             Double longitude,
             Integer radiusMeters,
             int limit) {
+        return searchPois(category, subcategory, region, keyword,
+                latitude, longitude, radiusMeters, limit, null);
+    }
+
+    public PoiSearchResult searchPois(
+            String category,
+            String subcategory,
+            String region,
+            String keyword,
+            Double latitude,
+            Double longitude,
+            Integer radiusMeters,
+            int limit,
+            String legalDongCode) {
         MapDataResult allPois = getPois();
         String normalizedCategory = normalize(category);
         String normalizedSubcategory = normalize(subcategory);
         String normalizedRegion = normalize(region);
         String normalizedKeyword = normalize(keyword);
         boolean distanceSearch = latitude != null && longitude != null;
+        Path2D.Double legalDong = legalDongCode == null ? null : legalDongPolygons.get(legalDongCode);
 
         List<PoiDistance> matches = searchablePois(allPois.data()).stream()
                 .filter(poi -> normalizedCategory.isEmpty()
@@ -155,6 +181,8 @@ public class MapDataService {
                         || normalize(poi.get("subcategory")).contains(normalizedSubcategory))
                 .filter(poi -> normalizedRegion.isEmpty()
                         || matchesAnyField(poi, POI_REGION_FIELDS, normalizedRegion))
+                .filter(poi -> legalDongCode == null || legalDong != null
+                        && legalDong.contains(coordinateOf(poi, "longitude"), coordinateOf(poi, "latitude")))
                 .filter(poi -> normalizedKeyword.isEmpty()
                         || matchesAnyField(poi, POI_KEYWORD_FIELDS, normalizedKeyword))
                 .map(poi -> new PoiDistance(
@@ -202,7 +230,32 @@ public class MapDataService {
             GeoBounds bounds,
             String sortBy,
             String sortOrder) {
-        MapDataResult allProperties = getProperties();
+        return searchProperties(keyword, propertyType, maxPrice, legalDongCode, limit, bounds,
+                sortBy, sortOrder, "properties", null, null, null);
+    }
+
+    public PropertySearchResult searchProperties(
+            String keyword,
+            String propertyType,
+            Long maxPrice,
+            String legalDongCode,
+            int limit,
+            GeoBounds bounds,
+            String sortBy,
+            String sortOrder,
+            String searchMode,
+            Long selectedPropertyId,
+            String exactBuildingName,
+            Double exclusiveArea) {
+        boolean transactionHistory = !"properties".equals(searchMode);
+        MapDataResult allProperties = transactionHistory ? getTransactionProperties() : getProperties();
+        Map<String, Object> selectedProperty = selectedPropertyId == null ? null
+                : allProperties.data().stream()
+                        .filter(property -> selectedPropertyId.equals(propertyIdOf(property)))
+                        .findFirst().orElse(null);
+        if ("selected_building_transactions".equals(searchMode) && selectedProperty == null) {
+            return new PropertySearchResult(List.of(), 0, allProperties.source());
+        }
         String normalizedKeyword = normalize(keyword);
         String stationKeyword = normalizedKeyword.endsWith("역") && normalizedKeyword.length() > 1
                 ? normalizedKeyword.substring(0, normalizedKeyword.length() - 1)
@@ -210,18 +263,30 @@ public class MapDataService {
         String normalizedType = normalize(propertyType);
         String normalizedLegalDongCode = normalize(legalDongCode);
         String legalDongName = BUNDANG_LEGAL_DONG_NAMES.get(normalizedLegalDongCode);
+        String exactBuildingKey = buildingKey(exactBuildingName);
 
         List<Map<String, Object>> matches = allProperties.data().stream()
                 .filter(property -> matchesKeyword(property, normalizedKeyword, stationKeyword))
+                .filter(property -> exactBuildingKey.isEmpty()
+                        || exactBuildingKey.equals(buildingKey(property.get("building_name"))))
+                .filter(property -> selectedProperty == null || sameBuilding(property, selectedProperty))
                 .filter(property -> normalizedLegalDongCode.isEmpty()
                         || legalDongName != null && matchesLegalDong(property, legalDongName))
                 .filter(property -> normalizedType.isEmpty()
                         || normalizedType.equals(normalize(property.get("property_type"))))
                 .filter(property -> maxPrice == null || priceOf(property) <= maxPrice)
+                .filter(property -> exclusiveArea == null || matchesExclusiveArea(property, exclusiveArea))
+                .filter(property -> !transactionHistory || !LocalDate.MIN.equals(contractDateOf(property)))
                 .filter(property -> bounds == null || bounds.contains(
                         coordinateOf(property, "latitude"),
                         coordinateOf(property, "longitude")))
                 .toList();
+
+        if (transactionHistory && selectedProperty == null && !exactBuildingKey.isEmpty()
+                && normalizedLegalDongCode.isEmpty()
+                && matches.stream().map(this::buildingLocationKey).distinct().limit(2).count() > 1) {
+            return new PropertySearchResult(List.of(), 0, allProperties.source(), true);
+        }
 
         if ("sale_price".equals(sortBy)) {
             Comparator<Map<String, Object>> comparator = Comparator.comparingLong(this::priceOf);
@@ -229,6 +294,12 @@ public class MapDataService {
                 comparator = comparator.reversed();
             }
             matches = matches.stream().sorted(comparator).toList();
+        } else if ("contract_date".equals(sortBy) || transactionHistory) {
+            Comparator<Map<String, Object>> comparator = Comparator.comparing(this::contractDateOf)
+                    .thenComparing(property -> propertyIdOf(property),
+                            Comparator.nullsFirst(Comparator.naturalOrder()));
+            matches = matches.stream().sorted("asc".equals(sortOrder) && !transactionHistory
+                    ? comparator : comparator.reversed()).toList();
         }
 
         List<Map<String, Object>> summaries = matches.stream()
@@ -237,6 +308,46 @@ public class MapDataService {
                 .toList();
 
         return new PropertySearchResult(summaries, matches.size(), allProperties.source());
+    }
+
+    private MapDataResult getTransactionProperties() {
+        return new MapDataResult(
+                jdbcTemplate.query(TRANSACTION_PROPERTIES_SQL, this::mapRow), MapDataSource.TIDB);
+    }
+
+    private String buildingKey(Object value) {
+        return normalize(value).replaceAll("[\\s()（）\\[\\]]", "");
+    }
+
+    private String buildingLocationKey(Map<String, Object> property) {
+        String district = normalize(property.get("district"));
+        return district.isEmpty() ? normalize(property.get("address")) : district;
+    }
+
+    private boolean sameBuilding(Map<String, Object> candidate, Map<String, Object> selected) {
+        String name = buildingKey(selected.get("building_name"));
+        String location = buildingLocationKey(selected);
+        return !name.isEmpty() && !location.isEmpty()
+                && name.equals(buildingKey(candidate.get("building_name")))
+                && location.equals(buildingLocationKey(candidate));
+    }
+
+    private boolean matchesExclusiveArea(Map<String, Object> property, double requestedArea) {
+        double area = coordinateOf(property, "exclusive_area");
+        return Double.isFinite(area) && (requestedArea == Math.floor(requestedArea)
+                ? Math.floor(area) == requestedArea
+                : Math.abs(area - requestedArea) < 0.01);
+    }
+
+    private LocalDate contractDateOf(Map<String, Object> property) {
+        Object value = property.get("contract_date");
+        if (value == null) return LocalDate.MIN;
+        String date = value.toString();
+        try {
+            return LocalDate.parse(date.length() >= 10 ? date.substring(0, 10) : date);
+        } catch (java.time.format.DateTimeParseException exception) {
+            return LocalDate.MIN;
+        }
     }
 
     public PropertiesByIdsResult getPropertiesByIds(List<Long> propertyIds) {
@@ -519,7 +630,12 @@ public class MapDataService {
     public record PropertySearchResult(
             List<Map<String, Object>> properties,
             int totalCount,
-            MapDataSource source) {}
+            MapDataSource source,
+            boolean ambiguous) {
+        public PropertySearchResult(List<Map<String, Object>> properties, int totalCount, MapDataSource source) {
+            this(properties, totalCount, source, false);
+        }
+    }
 
     public record PropertiesByIdsResult(
             List<Long> requestedIds,
@@ -559,6 +675,61 @@ public class MapDataService {
             throw new IllegalStateException(
                     "대중교통 샘플 데이터 파일을 읽을 수 없습니다: " + TRANSIT_POINTS_RESOURCE,
                     exception);
+        }
+    }
+
+    private Map<String, Path2D.Double> readLegalDongPolygons() {
+        try {
+            Map<String, Object> geoJson = objectMapper.readValue(
+                    new ClassPathResource(LEGAL_DONG_RESOURCE).getInputStream(),
+                    new TypeReference<Map<String, Object>>() {});
+            Map<String, Path2D.Double> polygons = new LinkedHashMap<>();
+            if (geoJson.get("features") instanceof List<?> features) {
+                for (Object featureValue : features) {
+                    if (!(featureValue instanceof Map<?, ?> feature)
+                            || !(feature.get("properties") instanceof Map<?, ?> properties)
+                            || !(feature.get("geometry") instanceof Map<?, ?> geometry)) {
+                        continue;
+                    }
+                    Object code = properties.get("legal_dong_code");
+                    Object coordinates = geometry.get("coordinates");
+                    if (!(code instanceof String) || !(coordinates instanceof List<?> parts)) {
+                        continue;
+                    }
+                    Path2D.Double path = new Path2D.Double(Path2D.WIND_EVEN_ODD);
+                    if ("Polygon".equals(geometry.get("type"))) {
+                        appendPolygon(path, parts);
+                    } else if ("MultiPolygon".equals(geometry.get("type"))) {
+                        for (Object part : parts) {
+                            appendPolygon(path, part);
+                        }
+                    }
+                    polygons.put((String) code, path);
+                }
+            }
+            return Map.copyOf(polygons);
+        } catch (IOException exception) {
+            throw new IllegalStateException("법정동 경계 데이터를 읽을 수 없습니다: " + LEGAL_DONG_RESOURCE, exception);
+        }
+    }
+
+    private void appendPolygon(Path2D.Double path, Object polygonValue) {
+        if (!(polygonValue instanceof List<?> rings)) return;
+        for (Object ringValue : rings) {
+            if (!(ringValue instanceof List<?> ring)) continue;
+            boolean first = true;
+            for (Object pointValue : ring) {
+                if (!(pointValue instanceof List<?> point) || point.size() < 2
+                        || !(point.get(0) instanceof Number lng)
+                        || !(point.get(1) instanceof Number lat)) continue;
+                if (first) {
+                    path.moveTo(lng.doubleValue(), lat.doubleValue());
+                    first = false;
+                } else {
+                    path.lineTo(lng.doubleValue(), lat.doubleValue());
+                }
+            }
+            if (!first) path.closePath();
         }
     }
 

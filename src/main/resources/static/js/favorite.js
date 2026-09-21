@@ -12,7 +12,7 @@ window.addEventListener("storage", handleFavoriteStorageChange);
 function returnToPreviousMap(event) {
   try {
     const previousUrl = new URL(document.referrer);
-    if (previousUrl.origin === window.location.origin && previousUrl.pathname === "/properties/map") {
+    if (previousUrl.origin === window.location.origin && previousUrl.pathname === "/property/map") {
       event.preventDefault();
       window.history.back();
     }
@@ -183,7 +183,7 @@ function updateFavoriteSummary() {
 }
 
 function openPropertyOnMap(propertyId) {
-  const mapUrl = new URL("/properties/map", window.location.origin);
+  const mapUrl = new URL("/property/map", window.location.origin);
   mapUrl.searchParams.set("property_id", String(propertyId));
   window.location.href = mapUrl.href;
 }

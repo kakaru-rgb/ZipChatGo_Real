@@ -112,4 +112,33 @@ class AiControllerTests {
 
 		fastApi.verify();
 	}
+
+	@Test
+	void forwardsPoiActionsWithoutDroppingFields() throws Exception {
+		RestClient.Builder restClientBuilder = RestClient.builder().baseUrl("http://localhost:8000");
+		MockRestServiceServer fastApi = MockRestServiceServer.bindTo(restClientBuilder).build();
+		AiService aiService = new AiService(restClientBuilder.build());
+		MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new AiController(aiService)).build();
+
+		String poiResponse = """
+				{
+				  "message": "가까운 공인중개사 2곳을 찾았습니다.",
+				  "actions": [
+				    {"type":"SET_POI_CATEGORY","category":"중개","enabled":true},
+				    {"type":"HIGHLIGHT_POIS","poi_ids":["R1","R2"],"fit_bounds":true}
+				  ]
+				}
+				""";
+		fastApi.expect(requestTo("http://localhost:8000/agent/chat"))
+				.andExpect(method(HttpMethod.POST))
+				.andRespond(withSuccess(poiResponse, MediaType.APPLICATION_JSON));
+
+		mockMvc.perform(post("/api/ai/chat")
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("{\"message\":\"공인중개사 찾아줘\"}"))
+				.andExpect(status().isOk())
+				.andExpect(content().json(poiResponse));
+
+		fastApi.verify();
+	}
 }

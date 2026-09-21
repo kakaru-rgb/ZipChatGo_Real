@@ -14,5 +14,9 @@ public record AiUiAction(
         Integer delta,
         List<Long> propertyIds,
         Long propertyId,
-        String regionName) {
+        String regionName,
+        String category,
+        Boolean enabled,
+        List<String> poiIds,
+        Boolean fitBounds) {
 }

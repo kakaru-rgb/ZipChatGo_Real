@@ -29,7 +29,7 @@ public class WebConfig implements WebMvcConfigurer {
 		registry.addInterceptor(new AuthInterceptor())
 			.addPathPatterns(
 				"/favorite",
-				"/properties/map",
+				"/property/map",
 				"/property/register",
 				"/market/trend"
 			);

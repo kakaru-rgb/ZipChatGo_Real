@@ -50,6 +50,10 @@ public class MapDataController {
             @RequestParam(required = false) Double east,
             @RequestParam(required = false) String sortBy,
             @RequestParam(required = false) String sortOrder,
+            @RequestParam(defaultValue = "properties") String searchMode,
+            @RequestParam(required = false) Long selectedPropertyId,
+            @RequestParam(required = false) String exactBuildingName,
+            @RequestParam(required = false) Double exclusiveArea,
             @RequestParam(defaultValue = "10") int limit) {
         if (maxPrice != null && maxPrice < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "maxPrice must be zero or greater");
@@ -60,19 +64,34 @@ public class MapDataController {
         if (legalDongCode != null && !legalDongCode.matches("\\d{8}")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "legalDongCode must be 8 digits");
         }
-        if (sortBy != null && !"sale_price".equals(sortBy)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "sortBy must be sale_price");
+        if (sortBy != null && !"sale_price".equals(sortBy) && !"contract_date".equals(sortBy)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "sortBy must be sale_price or contract_date");
         }
         if (sortOrder != null && !sortOrder.matches("asc|desc")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "sortOrder must be asc or desc");
         }
+        if (!searchMode.matches("properties|transactions|selected_building_transactions")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid searchMode");
+        }
+        if (exclusiveArea != null && (!Double.isFinite(exclusiveArea) || exclusiveArea < 0)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "exclusiveArea must be a positive number");
+        }
+        if ("selected_building_transactions".equals(searchMode)
+                && (selectedPropertyId == null || selectedPropertyId < 1)
+                || "transactions".equals(searchMode)
+                && (exactBuildingName == null || exactBuildingName.isBlank())
+                && legalDongCode == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "transaction search needs a building or legal dong");
+        }
         GeoBounds bounds = createBounds(south, west, north, east);
 
         PropertySearchResult result = mapDataService.searchProperties(
-                keyword, propertyType, maxPrice, legalDongCode, limit, bounds, sortBy, sortOrder);
+                keyword, propertyType, maxPrice, legalDongCode, limit, bounds, sortBy, sortOrder,
+                searchMode, selectedPropertyId, exactBuildingName, exclusiveArea);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("total_count", result.totalCount());
         body.put("properties", result.properties());
+        if (result.ambiguous()) body.put("ambiguous", true);
 
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
@@ -151,7 +170,7 @@ public class MapDataController {
 
     @GetMapping(value = "/pois", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<List<Map<String, Object>>> pois() {
-        return jsonResponse(mapDataService.getPois());
+        return jsonResponse(mapDataService.getMapPois());
     }
 
     @GetMapping(value = "/pois/search", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -159,6 +178,7 @@ public class MapDataController {
             @RequestParam(required = false) String category,
             @RequestParam(required = false) String subcategory,
             @RequestParam(required = false) String region,
+            @RequestParam(name = "legal_dong_code", required = false) String legalDongCode,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Double lat,
             @RequestParam(required = false) Double lng,
@@ -177,9 +197,12 @@ public class MapDataController {
         if (limit < 1 || limit > 20) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit must be between 1 and 20");
         }
+        if (legalDongCode != null && !legalDongCode.matches("\\d{8}")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "legalDongCode must be an 8-digit code");
+        }
 
         PoiSearchResult result = mapDataService.searchPois(
-                category, subcategory, region, keyword, lat, lng, radius, limit);
+                category, subcategory, region, keyword, lat, lng, radius, limit, legalDongCode);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("total_count", result.totalCount());
         body.put("pois", result.pois());

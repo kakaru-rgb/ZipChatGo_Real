@@ -2,6 +2,7 @@ let map;
 let allProperties = [];
 let filteredProperties = [];
 let selectedProperty = null;
+let displayedPropertyIds = [];
 let propertyListScrollTop = 0;
 
 let propertyIndex = null;
@@ -17,6 +18,8 @@ let renderTimer = null;
 let allPois = [];
 let poiIndexes = new Map();
 let poiMarkerMap = new Map();
+let aiPoiHighlightMarkerMap = new Map();
+let highlightedPoiIds = new Set();
 let poiInfoMarker = null;
 let activePoiPopupItems = [];
 let activePoiPopupIndex = 0;
@@ -48,6 +51,7 @@ let selectedLegalDong = null;
 let selectedLegalDongLabelMarker = null;
 
 const INITIAL_CENTER = new naver.maps.LatLng(37.40, 127.15);
+const MAP_VIEWPORT_HISTORY_KEY = "zipchatgoMapViewport";
 
 const APP_MIN_ZOOM = 10; // 0단계
 const APP_START_ZOOM = 11;   // 처음 화면 1단계
@@ -60,6 +64,7 @@ const DONG_STAGE_MAX = 4;    // 3~4단계
 
 const MAX_VISIBLE_MARKERS = 700;
 const MAX_LIST_ITEMS = 200;
+const restoredMapViewport = getMapViewportFromHistory();
 const PROPERTY_CLUSTER_MARKER_WIDTH = 62;
 const PROPERTY_CLUSTER_MARKER_HEIGHT = 60;
 const PROPERTY_MARKER_WIDTH = 62;
@@ -139,8 +144,10 @@ const POI_VARIANT_CONFIG = {
 };
 
 map = new naver.maps.Map("map", {
-  center: INITIAL_CENTER,
-  zoom: APP_START_ZOOM,
+  center: restoredMapViewport
+    ? new naver.maps.LatLng(restoredMapViewport.lat, restoredMapViewport.lng)
+    : INITIAL_CENTER,
+  zoom: restoredMapViewport?.zoom ?? APP_START_ZOOM,
   minZoom: APP_MIN_ZOOM,
   maxZoom: APP_MAX_ZOOM,
   zoomControl: false
@@ -157,7 +164,7 @@ window.zipchatgoMapActions = Object.freeze({
   execute: executeAiMapActions
 });
 
-loadPois();
+const poiDataReady = loadPois();
 
 function getAiAppState() {
   const center = map.getCenter();
@@ -216,6 +223,63 @@ function getAiAppState() {
   };
 }
 
+function getMapViewportFromHistory() {
+  const viewport = window.history.state?.[MAP_VIEWPORT_HISTORY_KEY];
+  const lat = Number(viewport?.lat);
+  const lng = Number(viewport?.lng);
+  const zoom = Number(viewport?.zoom);
+
+  if (
+    !Number.isFinite(lat) || lat < -90 || lat > 90 ||
+    !Number.isFinite(lng) || lng < -180 || lng > 180 ||
+    !Number.isInteger(zoom) || zoom < APP_MIN_ZOOM || zoom > APP_MAX_ZOOM
+  ) return null;
+
+  const propertyIds = Array.isArray(viewport.property_ids)
+    ? viewport.property_ids.map(String).slice(0, MAX_LIST_ITEMS)
+    : [];
+  const selectedPropertyId = viewport.selected_property_id == null
+    ? null
+    : String(viewport.selected_property_id);
+
+  return { lat, lng, zoom, propertyIds, selectedPropertyId };
+}
+
+function saveMapViewportToHistory() {
+  const center = map?.getCenter();
+  const zoom = Number(map?.getZoom());
+  if (!center || !Number.isInteger(zoom)) return;
+
+  const currentState = window.history.state && typeof window.history.state === "object"
+    ? window.history.state
+    : {};
+
+  window.history.replaceState({
+    ...currentState,
+    [MAP_VIEWPORT_HISTORY_KEY]: {
+      lat: center.lat(),
+      lng: center.lng(),
+      zoom,
+      property_ids: displayedPropertyIds,
+      selected_property_id: selectedProperty?.id ?? null
+    }
+  }, "");
+}
+
+function restorePropertySelectionFromHistory() {
+  const propertiesById = new Map(allProperties.map(item => [item.id, item]));
+  const restoredItems = (restoredMapViewport?.propertyIds || [])
+    .map(id => propertiesById.get(id))
+    .filter(Boolean);
+
+  renderList(restoredItems);
+
+  if (restoredMapViewport?.selectedPropertyId) {
+    const selectedItem = propertiesById.get(restoredMapViewport.selectedPropertyId);
+    if (selectedItem) openPropertyDetail(selectedItem);
+  }
+}
+
 async function loadProperties() {
   try {
     const res = await fetch("/api/map/properties");
@@ -241,15 +305,20 @@ async function loadProperties() {
 
     rebuildIndexes();
 
-    // 처음 화면은 항상 1단계 고정
-    map.setCenter(INITIAL_CENTER);
-    map.setZoom(APP_START_ZOOM);
+    // 복원할 방문 기록이 없을 때만 기본 위치와 줌을 사용한다.
+    if (restoredMapViewport) {
+      map.setCenter(new naver.maps.LatLng(restoredMapViewport.lat, restoredMapViewport.lng));
+      map.setZoom(restoredMapViewport.zoom);
+    } else {
+      map.setCenter(INITIAL_CENTER);
+      map.setZoom(APP_START_ZOOM);
+    }
 
     bindEvents();
     scheduleReverseGeocode();
 
     if (!openRequestedPropertyFromUrl()) {
-      renderList([]);
+      restorePropertySelectionFromHistory();
       scheduleRender();
     }
 
@@ -328,6 +397,7 @@ function bindEvents() {
   updateMapZoomLevelIndicator();
   naver.maps.Event.addListener(map, "zoom_changed", updateMapZoomLevelIndicator);
   naver.maps.Event.addListener(map, "idle", () => {
+    saveMapViewportToHistory();
     updateMapZoomLevelIndicator();
     scheduleRender();
     scheduleReverseGeocode();
@@ -612,15 +682,25 @@ function getPoiMarkerConfig(category, variant) {
 
 function togglePoiCategory(button) {
   const category = button.dataset.poiCategory;
-  const willActivate = !activePoiCategories.has(category);
+  setPoiCategory(category, !activePoiCategories.has(category));
+}
 
-  if (willActivate) {
+function setPoiCategory(category, enabled) {
+  const button = [...document.querySelectorAll(".poi-toggle")]
+    .find(item => item.dataset.poiCategory === category);
+  if (!button || !POI_CATEGORY_CONFIG[category]) return;
+
+  if (enabled) {
     activePoiCategories.add(category);
   } else {
     activePoiCategories.delete(category);
+    if (allPois.some(poi => poi.category === category && highlightedPoiIds.has(poi.poi_id))) {
+      highlightedPoiIds.clear();
+      clearAiPoiHighlightMarkers();
+    }
   }
 
-  button.setAttribute("aria-pressed", String(willActivate));
+  button.setAttribute("aria-pressed", String(enabled));
   closePoiInfoPopup();
   rebuildPoiIndex();
   scheduleRender();
@@ -724,9 +804,10 @@ function renderPois() {
 
   if (
     !poiIndexes.size ||
-    stage <= DONG_STAGE_MAX
+    (stage <= DONG_STAGE_MAX && !highlightedPoiIds.size)
   ) {
     clearPoiMarkers();
+    renderAiPoiHighlightMarkers();
     return;
   }
 
@@ -755,7 +836,6 @@ function renderPois() {
     const key = props.cluster
       ? `poi-cluster-${category}-${props.cluster_id}`
       : props.markerKey;
-
     nextKeys.add(key);
 
     if (!poiMarkerMap.has(key)) {
@@ -770,16 +850,17 @@ function renderPois() {
   });
 
   removeUnusedPoiMarkers(nextKeys);
+  renderAiPoiHighlightMarkers();
 }
 
-function renderPoiMarkerContent(category, config, title, count = 0) {
+function renderPoiMarkerContent(category, config, title, count = 0, highlighted = false) {
   const badge = count > 1
     ? `<span class="poi-marker-badge">${count > 99 ? "99+" : count.toLocaleString()}</span>`
     : "";
 
   if (category === "중개") {
     return `
-      <div class="brokerage-marker" title="${escapeHtml(title)}">
+      <div class="brokerage-marker${highlighted ? " is-ai-highlight" : ""}" title="${escapeHtml(title)}">
         <svg class="brokerage-marker-shape" viewBox="0 0 42 48" aria-hidden="true">
           <path class="brokerage-marker-house"
                 d="M21 2 39 14v21c0 2.2-1.8 4-4 4h-7l-7 8-7-8H7c-2.2 0-4-1.8-4-4V14L21 2Z"></path>
@@ -793,7 +874,7 @@ function renderPoiMarkerContent(category, config, title, count = 0) {
   }
 
   return `
-    <div class="poi-marker ${config.className}" title="${escapeHtml(title)}">
+    <div class="poi-marker ${config.className}${highlighted ? " is-ai-highlight" : ""}" title="${escapeHtml(title)}">
       <svg class="poi-marker-icon" viewBox="0 0 24 24" aria-hidden="true">
         ${config.icon}
       </svg>
@@ -1536,10 +1617,55 @@ async function executeAiMapActions(actions) {
 
   if (!mapActions.length) return;
 
-  await Promise.all([propertyDataReady, legalDongDataReady]);
+  await Promise.all([propertyDataReady, legalDongDataReady, poiDataReady]);
 
   mapActions.forEach(action => {
     if (!action || typeof action.type !== "string") return;
+
+    if (action.type === "SET_POI_CATEGORY") {
+      if (typeof action.enabled === "boolean") {
+        setPoiCategory(action.category, action.enabled);
+      }
+      return;
+    }
+
+    if (action.type === "CLEAR_POI_HIGHLIGHTS") {
+      highlightedPoiIds.clear();
+      clearAiPoiHighlightMarkers();
+      clearPoiMarkers();
+      scheduleRender();
+      return;
+    }
+
+    if (action.type === "HIGHLIGHT_POIS") {
+      if (!Array.isArray(action.poi_ids) || !action.poi_ids.length || action.poi_ids.length > 20) return;
+      const ids = new Set(action.poi_ids.map(String));
+      const items = allPois.filter(poi => (
+        ids.has(poi.poi_id) && activePoiCategories.has(poi.category)
+      ));
+      if (items.length !== ids.size) return;
+
+      highlightedPoiIds = ids;
+      clearAiPoiHighlightMarkers();
+      clearPoiMarkers();
+      const bounds = map.getBounds();
+      const southWest = bounds.getSW();
+      const northEast = bounds.getNE();
+      const resultsOutsideView = items.some(item => (
+        item.latitude < southWest.lat() || item.latitude > northEast.lat() ||
+        item.longitude < southWest.lng() || item.longitude > northEast.lng()
+      ));
+      if (action.fit_bounds === true || resultsOutsideView || getAppZoomStage(map.getZoom()) <= DONG_STAGE_MAX) {
+        if (items.length === 1) {
+          map.setCenter(new naver.maps.LatLng(items[0].latitude, items[0].longitude));
+          map.setZoom(Math.max(map.getZoom(), APP_MIN_ZOOM + DONG_STAGE_MAX + 1));
+        } else {
+          fitMapToData(items);
+        }
+      }
+      scheduleRender();
+      return;
+    }
 
     if (action.type === "MOVE_MAP") {
       const lat = Number(action.lat);
@@ -1861,6 +1987,7 @@ function handleFavoriteStorageChange(event) {
 
 function renderList(items, { openMobileList = false } = {}) {
   showPropertyListView();
+  displayedPropertyIds = items.slice(0, MAX_LIST_ITEMS).map(item => String(item.id));
 
   const list = document.getElementById("propertyList");
   const count = document.getElementById("resultCount");
@@ -1952,6 +2079,8 @@ function renderList(items, { openMobileList = false } = {}) {
   if (openMobileList) {
     openMobilePropertyList();
   }
+
+  saveMapViewportToHistory();
 }
 
 /* ===========================
@@ -2379,6 +2508,8 @@ function showPropertyListView({ restoreScroll = false } = {}) {
   } else if (detailWasOpen) {
     sidebar.scrollTop = 0;
   }
+
+  saveMapViewportToHistory();
 }
 
 function openPropertyDetail(item) {
@@ -2397,6 +2528,8 @@ function openPropertyDetail(item) {
   if (isMobileMapLayout()) {
     setMobileMapView("detail");
   }
+
+  saveMapViewportToHistory();
 }
 
 function renderPropertyDetail(item) {
@@ -3312,6 +3445,46 @@ function clearPoiMarkers() {
   }
 
   poiMarkerMap.clear();
+}
+
+function clearAiPoiHighlightMarkers() {
+  for (const marker of aiPoiHighlightMarkerMap.values()) {
+    marker.setMap(null);
+  }
+  aiPoiHighlightMarkerMap.clear();
+}
+
+function renderAiPoiHighlightMarkers() {
+  clearAiPoiHighlightMarkers();
+  if (!highlightedPoiIds.size) return;
+
+  const groups = new Map();
+  allPois.forEach(poi => {
+    if (!highlightedPoiIds.has(poi.poi_id) || !activePoiCategories.has(poi.category)) return;
+    const key = `${poi.category}|${poi.latitude}|${poi.longitude}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(poi);
+  });
+
+  groups.forEach((items, key) => {
+    const poi = items[0];
+    const config = getPoiMarkerConfig(poi.category, getPoiVariant(poi));
+    const position = new naver.maps.LatLng(poi.latitude, poi.longitude);
+    const marker = new naver.maps.Marker({
+      position,
+      map,
+      clickable: !distanceMeasureActive,
+      zIndex: 260,
+      icon: {
+        content: renderPoiMarkerContent(poi.category, config, poi.name || config.label, items.length, true),
+        anchor: getPoiMarkerAnchor(poi.category)
+      }
+    });
+    naver.maps.Event.addListener(marker, "click", () => {
+      if (!distanceMeasureActive) openPoiInfoPopup(items, position);
+    });
+    aiPoiHighlightMarkerMap.set(key, marker);
+  });
 }
 
 function fitMapToData(items) {

@@ -27,19 +27,19 @@
     </button>
 
     <nav class="top-nav" id="mobileNav">
-      <a class="guest-menu" href="../member/login.html">
+      <a class="guest-menu" th:href="@{/member/login}">
         <i class="ti ti-login" aria-hidden="true"></i>
         로그인
       </a>
-      <a class="guest-menu" href="../member/signup.html">
+      <a class="guest-menu" th:href="@{/member/signup}">
         <i class="ti ti-user-plus" aria-hidden="true"></i>
         회원가입
       </a>
-      <a href="../support/contact.html">
+      <a th:href="@{/support/contact}">
         <i class="ti ti-headset" aria-hidden="true"></i>
         고객센터
       </a>
-      <a class="user-menu" href="/favorite" th:href="@{/favorite}">
+      <a class="user-menu" href="/favorites" th:href="@{/favorites}">
         <i class="ti ti-heart" aria-hidden="true"></i>
         관심매물
       </a>

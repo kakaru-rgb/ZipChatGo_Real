@@ -107,6 +107,22 @@ class HighlightPropertiesAction(BaseModel):
     property_ids: list[int] = Field(min_length=1, max_length=10)
 
 
+class SetPoiCategoryAction(BaseModel):
+    type: Literal["SET_POI_CATEGORY"] = "SET_POI_CATEGORY"
+    category: Literal["공공기관", "교육", "교통", "의료", "중개"]
+    enabled: bool = True
+
+
+class HighlightPoisAction(BaseModel):
+    type: Literal["HIGHLIGHT_POIS"] = "HIGHLIGHT_POIS"
+    poi_ids: list[str] = Field(min_length=1, max_length=20)
+    fit_bounds: bool = False
+
+
+class ClearPoiHighlightsAction(BaseModel):
+    type: Literal["CLEAR_POI_HIGHLIGHTS"] = "CLEAR_POI_HIGHLIGHTS"
+
+
 class OpenPropertyAction(BaseModel):
     type: Literal["OPEN_PROPERTY"] = "OPEN_PROPERTY"
     property_id: int = Field(ge=1)
@@ -180,6 +196,9 @@ UiAction = Annotated[
     | ZoomMapAction
     | FitBoundsAction
     | HighlightPropertiesAction
+    | SetPoiCategoryAction
+    | HighlightPoisAction
+    | ClearPoiHighlightsAction
     | OpenPropertyAction
     | AddFavoriteAction
     | RemoveFavoriteAction
@@ -198,8 +217,12 @@ class PropertySearchArguments(BaseModel):
     keyword: str | None = Field(default=None, max_length=100)
     property_type: Literal["아파트", "오피스텔", "빌라"] | None = None
     max_price: int | None = Field(default=None, ge=0, le=100_000_000_000)
+    search_mode: Literal["properties", "transactions", "selected_building_transactions"] = "properties"
+    exact_building_name: str | None = Field(default=None, max_length=120)
+    exclusive_area: float | None = Field(default=None, ge=0)
+    selected_property_id: int | None = Field(default=None, ge=1)
     limit: int | None = Field(default=None, ge=1, le=20)
-    sort_by: Literal["sale_price"] | None = None
+    sort_by: Literal["sale_price", "contract_date"] | None = None
     sort_order: Literal["asc", "desc"] | None = None
     map_bounds: MapBounds | None = None
     legal_dong_code: str | None = Field(default=None, pattern=r"^\d{8}$")
@@ -208,6 +231,7 @@ class PropertySearchArguments(BaseModel):
 class PropertySearchResult(BaseModel):
     total_count: int = Field(ge=0)
     properties: list[dict[str, Any]]
+    ambiguous: bool = False
 
 
 class PropertiesByIdsArguments(BaseModel):
@@ -231,6 +255,7 @@ class TransitStationSearchResult(BaseModel):
 
 class PoiSearchArguments(BaseModel):
     category: Literal["공공기관", "교육", "교통", "의료", "중개"] | None = None
+    legal_dong_code: str | None = Field(default=None, pattern=r"^\d{8}$")
     subcategory: str | None = Field(default=None, min_length=1, max_length=50)
     region: str | None = Field(default=None, min_length=1, max_length=100)
     keyword: str | None = Field(default=None, min_length=1, max_length=100)

@@ -27,13 +27,21 @@ class PropertySearchTool:
 
     def search(self, raw_arguments: dict[str, Any]) -> dict[str, Any]:
         arguments = PropertySearchArguments.model_validate(raw_arguments)
-        params: dict[str, str | int] = {"limit": arguments.limit or 10}
+        params: dict[str, str | int | float] = {"limit": arguments.limit or 10}
         if arguments.keyword:
             params["keyword"] = arguments.keyword
         if arguments.property_type:
             params["propertyType"] = arguments.property_type
         if arguments.max_price is not None:
             params["maxPrice"] = arguments.max_price
+        if arguments.search_mode != "properties":
+            params["searchMode"] = arguments.search_mode
+        if arguments.exact_building_name:
+            params["exactBuildingName"] = arguments.exact_building_name
+        if arguments.exclusive_area is not None:
+            params["exclusiveArea"] = arguments.exclusive_area
+        if arguments.search_mode == "selected_building_transactions" and arguments.selected_property_id is not None:
+            params["selectedPropertyId"] = arguments.selected_property_id
         if arguments.sort_by:
             params["sortBy"] = arguments.sort_by
         if arguments.sort_order:
@@ -57,7 +65,7 @@ class PropertySearchTool:
         except (httpx.HTTPError, ValueError) as exception:
             raise PropertySearchError("Spring property search request failed") from exception
 
-        return result.model_dump()
+        return result.model_dump(exclude_defaults=True)
 
     def get_by_ids(self, raw_arguments: dict[str, Any]) -> dict[str, Any]:
         arguments = PropertiesByIdsArguments.model_validate(raw_arguments)

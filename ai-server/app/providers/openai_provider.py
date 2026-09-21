@@ -1,4 +1,5 @@
 import json
+import math
 import re
 from difflib import SequenceMatcher
 from typing import Any
@@ -10,7 +11,9 @@ from app.providers.llm_provider import AgentReply, ToolHandler
 from app.schemas import (
     AddFavoriteAction,
     BUNDANG_LEGAL_DONG_NAME_VALUES,
+    ClearPoiHighlightsAction,
     FitBoundsAction,
+    HighlightPoisAction,
     HighlightPropertiesAction,
     MoveMapAction,
     OpenPropertyAction,
@@ -18,6 +21,7 @@ from app.schemas import (
     RecentPropertySummary,
     RemoveFavoriteAction,
     SelectRegionAction,
+    SetPoiCategoryAction,
     UiAction,
     ZoomMapAction,
 )
@@ -28,7 +32,8 @@ SEARCH_PROPERTIES_TOOL = {
     "name": "search_properties",
     "description": (
         "집찾GO의 현재 매물 데이터에서 지역·역명·단지명·주소, 매물 유형, "
-        "최대 매매가격 조건으로 매물을 검색합니다. 현재 매물을 찾아달라는 요청에 사용합니다."
+        "최대 매매가격 조건으로 매물을 검색합니다. 실거래 이력은 같은 properties 데이터의 "
+        "최근 3년 범위를 검색합니다. 선택 매물의 같은 단지 거래에는 selected_building_transactions를 사용합니다."
     ),
     "parameters": {
         "type": "object",
@@ -49,6 +54,21 @@ SEARCH_PROPERTIES_TOOL = {
                 "minimum": 0,
                 "maximum": 100_000_000_000,
             },
+            "search_mode": {
+                "type": "string",
+                "enum": ["properties", "transactions", "selected_building_transactions"],
+                "description": "일반 매물 검색은 properties, 선택 매물의 같은 단지 거래는 selected_building_transactions, 이름이나 선택 동의 거래는 transactions입니다.",
+            },
+            "exact_building_name": {
+                "type": ["string", "null"],
+                "description": "명시된 단지의 거래 이력을 검색할 때만 사용하는 정확 단지명. 선택 매물 거래이면 null입니다.",
+                "maxLength": 120,
+            },
+            "exclusive_area": {
+                "type": ["number", "null"],
+                "description": "거래 이력에서 요청한 전용면적(㎡). 예: 전용 84㎡는 84입니다. 조건이 없으면 null입니다.",
+                "minimum": 0,
+            },
             "limit": {
                 "type": ["integer", "null"],
                 "description": "Maximum number of properties to return. Use the user's explicit count.",
@@ -57,8 +77,8 @@ SEARCH_PROPERTIES_TOOL = {
             },
             "sort_by": {
                 "type": ["string", "null"],
-                "enum": ["sale_price", None],
-                "description": "Use sale_price for cheapest or most expensive requests.",
+                "enum": ["sale_price", "contract_date", None],
+                "description": "Use sale_price for price ranking and contract_date for recent transactions.",
             },
             "sort_order": {
                 "type": ["string", "null"],
@@ -67,7 +87,8 @@ SEARCH_PROPERTIES_TOOL = {
             },
         },
         "required": [
-            "keyword", "property_type", "max_price", "limit", "sort_by", "sort_order"
+            "keyword", "property_type", "max_price", "search_mode",
+            "exact_building_name", "exclusive_area", "limit", "sort_by", "sort_order"
         ],
         "additionalProperties": False,
     },
@@ -119,6 +140,15 @@ SEARCH_POI_TOOL = {
                 "enum": ["공공기관", "교육", "교통", "의료", "중개", None],
                 "description": "실제 POI 대분류. 조건이 없으면 null입니다.",
             },
+            "location_source": {
+                "type": "string",
+                "enum": ["selected_property", "selected_region", "map_center", "region", "provided"],
+                "description": (
+                    "검색 범위 기준. 현재 선택한 지역/동 전체면 selected_region, "
+                    "현재 선택한 매물 근처면 selected_property, 명시한 다른 지역명이면 region입니다. "
+                    "selected_region과 selected_property의 위치는 서버가 검증·교체합니다."
+                ),
+            },
             "subcategory": {
                 "type": ["string", "null"],
                 "description": (
@@ -163,7 +193,7 @@ SEARCH_POI_TOOL = {
             },
         },
         "required": [
-            "category", "subcategory", "region", "keyword",
+            "category", "location_source", "subcategory", "region", "keyword",
             "lat", "lng", "radius", "limit",
         ],
         "additionalProperties": False,
@@ -474,9 +504,11 @@ AGENT_TOOLS = [
 ]
 
 UI_ACTION_INSTRUCTIONS = """
+For transaction-history questions, reuse search_properties with search_mode=transactions, or selected_building_transactions when referring to the currently selected apartment. The selected record's ID is resolved by the server; never guess its building name. For the currently selected legal dong use transactions with keyword=null and exact_building_name=null; the server adds its code. Use exact_building_name for explicitly named complexes, exclusive_area for a requested square-meter class, and contract_date descending for recency. If the tool reports ambiguous=true, ask the user to specify the legal dong instead of combining complexes. The available transaction data covers Bundang-gu and at most the last three years; say so for older requests and never invent earlier transactions. Report only fields actually returned by the tool.
 Use search_poi for questions about nearby or regional facilities. The supported broad categories are 공공기관, 교육, 교통, 의료, and 중개. Use subcategory or keyword for actual finer types such as schools, bus stops, subway stations, hospitals, and public offices. A requested finer type may legitimately return zero results; never claim that unavailable types exist.
-For 'this area' prefer selected_region when present, otherwise use current_legal_dong or map_center. For 'around this property' use selected_property latitude and longitude from App State. Do not invent coordinates. Natural-language interpretation belongs to Tool Calling; do not ask Python to classify phrases such as nearby or closest.
-When the user asks only how many POIs exist, answer from total_count without listing every returned POI. For nearby lists, provide only the requested count with name, distance when returned, and minimal location information. If total_count is zero, say no matching POI was found and do not switch to another region or category unless the user explicitly requested a fallback.
+For the currently selected region or dong, choose search_poi location_source=selected_region. This searches its entire verified legal-dong boundary, not a radius around map_center or selected_property. If selected_region is absent, ask the user to select a region; do not guess one from map_center. For an explicitly named other region choose location_source=region. For 'around this property' choose location_source=selected_property. Its ID and coordinates are verified from App State or the property lookup; do not guess coordinates. Natural-language interpretation belongs to Tool Calling; do not ask Python to classify phrases such as nearby or closest.
+When the user asks only how many POIs exist, answer from total_count, never from the length of the limited pois list. Do not list every returned POI. For nearby lists, provide only the requested count with name, distance when returned, and minimal location information. If total_count is zero, say no matching POI was found and do not switch to another region or category unless the user explicitly requested a fallback.
+After search_poi, the returned POIs are automatically highlighted on the map and their existing categories are enabled. Do not call any further tool merely to display POIs. Never use POI names as IDs or use property fit_bounds for POIs.
 For questions about the current favorite-property list, its prices, areas, locations, details, or comparison, call get_properties_by_ids with the favorite_property_ids from App State. If that list is empty, explain that this session has no favorites without calling the tool. Never invent or add IDs. For a general regional property search, continue to use search_properties. When the user explicitly asks to show favorites on the map, reuse fit_bounds and highlight_properties with the properties returned by get_properties_by_ids.
 Match the favorite-property answer detail to the question. For a count question, answer only the count from favorite_property_ids and do not call get_properties_by_ids or print property details. For a simple list question, list only property names or the minimum identifying information; omit price, area, and full address unless requested. For a detail question, provide the requested details. For a comparison question, state the result and only the fields needed for that comparison; do not dump every field of every favorite.
 Use add_favorites or remove_favorites only when the user explicitly asks to change the favorite list. Interpret singular or plural references from App State, recent_property_ids, and tool results. Preserve distinct property IDs even when their names are identical. If the referenced IDs are not clear from that context, ask the user instead of guessing. Favorite-list questions such as showing, counting, or comparing are reads and must never produce favorite mutation actions.
@@ -590,6 +622,19 @@ def _selected_property_state(
     legacy_id = _positive_property_id(app_state.get("selected_property_id"))
     mismatched = summary_id is not None and legacy_id is not None and summary_id != legacy_id
     return summary, None if mismatched else (summary_id or legacy_id), mismatched
+
+
+def _poi_coordinates(value: dict[str, Any] | None) -> tuple[float, float] | None:
+    if not isinstance(value, dict):
+        return None
+    try:
+        lat = float(value["latitude"])
+        lng = float(value["longitude"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not math.isfinite(lat) or not math.isfinite(lng) or not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return None
+    return lat, lng
 
 
 def _is_selected_property_question(message: str) -> bool:
@@ -828,7 +873,7 @@ class OpenAIProvider:
             selected_property_id,
             selected_property_state_mismatch,
         ) = _selected_property_state(app_state)
-        if _is_selected_property_question(message):
+        if search_poi is None and _is_selected_property_question(message):
             return _selected_property_reply(
                 selected_property_summary,
                 selected_property_id,
@@ -1070,23 +1115,49 @@ class OpenAIProvider:
                 post_tool_instruction = None
                 if function_call.name == "search_properties" and search_properties:
                     arguments = json.loads(function_call.arguments)
+                    arguments.pop("selected_property_id", None)
+                    arguments.pop("legal_dong_code", None)
                     if search_limit is not None:
                         arguments["limit"] = search_limit
                     if search_sort_by is not None:
                         arguments["sort_by"] = search_sort_by
                         arguments["sort_order"] = search_sort_order
+                    search_mode = arguments.get("search_mode", "properties")
                     selected_region = app_state.get("selected_region") if app_state else None
-                    if not arguments.get("keyword") and isinstance(selected_region, dict):
+                    if search_mode != "properties":
+                        arguments["property_type"] = "아파트"
+                        arguments["sort_by"] = "contract_date"
+                        arguments["sort_order"] = "desc"
+                        arguments.pop("map_bounds", None)
+                        if search_mode == "selected_building_transactions":
+                            arguments["keyword"] = None
+                            arguments["exact_building_name"] = None
+                            arguments.pop("legal_dong_code", None)
+                            if not selected_property_state_mismatch and selected_property_id is not None:
+                                arguments["selected_property_id"] = selected_property_id
+                        elif (
+                            not arguments.get("exact_building_name")
+                            and not arguments.get("keyword")
+                            and isinstance(selected_region, dict)
+                            and selected_region.get("type") == "legal_dong"
+                        ):
+                            arguments["legal_dong_code"] = selected_region.get("code")
+                    elif not arguments.get("keyword") and isinstance(selected_region, dict):
                         legal_dong_code = selected_region.get("code")
                         if selected_region.get("type") == "legal_dong" and legal_dong_code:
                             arguments["legal_dong_code"] = legal_dong_code
-                    elif (
-                        not arguments.get("keyword")
-                        and app_state
-                        and app_state.get("map_bounds")
-                    ):
+                    elif not arguments.get("keyword") and app_state and app_state.get("map_bounds"):
                         arguments["map_bounds"] = app_state["map_bounds"]
-                    result = search_properties(arguments)
+                    if (
+                        search_mode == "selected_building_transactions"
+                        and "selected_property_id" not in arguments
+                        or search_mode == "transactions"
+                        and not arguments.get("exact_building_name")
+                        and not arguments.get("legal_dong_code")
+                    ):
+                        result = {"status": "rejected", "reason": "Select an apartment or legal dong for transaction history."}
+                    else:
+                        result = search_properties(arguments)
                     searched_properties = result.get("properties", [])
                     latest_lookup_properties = searched_properties
                     property_lookup_completed = True
@@ -1142,7 +1213,80 @@ class OpenAIProvider:
                         )
                 elif function_call.name == "search_poi" and search_poi:
                     arguments = json.loads(function_call.arguments)
-                    result = search_poi(arguments)
+                    location_source = arguments.pop("location_source", None)
+                    arguments.pop("legal_dong_code", None)
+                    coordinates = None
+                    if location_source == "selected_property":
+                        if not selected_property_state_mismatch and selected_property_id is not None:
+                            if (
+                                selected_property_summary
+                                and _positive_property_id(selected_property_summary.get("id")) == selected_property_id
+                            ):
+                                coordinates = _poi_coordinates(selected_property_summary)
+                            if coordinates is None and get_properties_by_ids is not None:
+                                lookup = get_properties_by_ids({"property_ids": [selected_property_id]})
+                                for property_item in lookup.get("properties", []):
+                                    if _positive_property_id(property_item.get("id")) == selected_property_id:
+                                        coordinates = _poi_coordinates(property_item)
+                                        break
+                    elif location_source == "map_center" and app_state:
+                        center = app_state.get("map_center")
+                        if isinstance(center, dict):
+                            coordinates = _poi_coordinates({
+                                "latitude": center.get("lat"), "longitude": center.get("lng"),
+                            })
+
+                    selected_region = app_state.get("selected_region") if app_state else None
+                    if location_source == "selected_region":
+                        region_code = selected_region.get("code") if isinstance(selected_region, dict) else None
+                        if (
+                            isinstance(selected_region, dict)
+                            and selected_region.get("type") == "legal_dong"
+                            and isinstance(region_code, str)
+                            and len(region_code) == 8
+                            and region_code.isdigit()
+                        ):
+                            arguments["legal_dong_code"] = region_code
+                            arguments["region"] = None
+                            arguments["lat"] = None
+                            arguments["lng"] = None
+                            arguments["radius"] = None
+                    elif location_source == "region":
+                        arguments["lat"] = None
+                        arguments["lng"] = None
+                        arguments["radius"] = None
+                    if (
+                        location_source in {"selected_property", "map_center"} and coordinates is None
+                        or location_source == "selected_region" and not arguments.get("legal_dong_code")
+                    ):
+                        result = {"status": "rejected", "reason": "The selected search location is unavailable."}
+                    else:
+                        if coordinates is not None:
+                            arguments["lat"], arguments["lng"] = coordinates
+                            arguments["region"] = None
+                            arguments.pop("legal_dong_code", None)
+                        result = search_poi(arguments)
+                        valid_pois = [
+                            poi for poi in result.get("pois", [])
+                            if isinstance(poi, dict)
+                            and str(poi.get("id") or "").strip()
+                            and poi.get("category") in {"공공기관", "교육", "교통", "의료", "중개"}
+                        ][:20]
+                        actions = [
+                            action for action in actions
+                            if not isinstance(action, (
+                                SetPoiCategoryAction, HighlightPoisAction,
+                                ClearPoiHighlightsAction,
+                            ))
+                        ]
+                        if valid_pois:
+                            for category in dict.fromkeys(poi["category"] for poi in valid_pois):
+                                actions.append(SetPoiCategoryAction(category=category))
+                            actions.append(HighlightPoisAction(
+                                poi_ids=list(dict.fromkeys(str(poi["id"]) for poi in valid_pois)),
+                            ))
+                        else:
+                            actions.append(ClearPoiHighlightsAction())
                 elif function_call.name == "set_presented_properties":
                     arguments = json.loads(function_call.arguments)
                     raw_ids = arguments.get("property_ids", [])

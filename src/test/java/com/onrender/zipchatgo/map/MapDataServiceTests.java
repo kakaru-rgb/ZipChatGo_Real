@@ -3,11 +3,14 @@ package com.onrender.zipchatgo.map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.LinkedHashMap;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -50,6 +53,98 @@ class MapDataServiceTests {
         assertThat(result.properties()).hasSize(1);
         assertThat(result.properties().getFirst().get("id")).isEqualTo(1L);
         assertThat(result.properties().getFirst()).doesNotContainKey("description");
+        verify(jdbcTemplate).query(argThat((String sql) -> sql.contains("INTERVAL 12 MONTH")), any(RowMapper.class));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void selectedBuildingHistoryMatchesExactDongAndNameAndSortsFiveTransactions() {
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (int index = 0; index < 6; index++) {
+            rows.add(transaction(100L + index, "효자촌(럭키)", "성남시 분당구 서현동",
+                    84.90 + index * 0.01, LocalDate.of(2024, 1, 1).plusMonths(index)));
+        }
+        rows.add(transaction(300L, "효자촌(럭키)", "성남시 분당구 정자동",
+                84.91, LocalDate.of(2025, 1, 1)));
+        rows.add(transaction(301L, "효자촌(럭키)2", "성남시 분당구 서현동",
+                84.91, LocalDate.of(2025, 2, 1)));
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class))).thenReturn(rows);
+
+        MapDataService.PropertySearchResult result = service.searchProperties(
+                null, "아파트", null, null, 5, null, "contract_date", "desc",
+                "selected_building_transactions", 100L, null, null);
+
+        assertThat(result.totalCount()).isEqualTo(6);
+        assertThat(result.properties()).extracting(item -> item.get("id"))
+                .containsExactly(105L, 104L, 103L, 102L, 101L);
+        verify(jdbcTemplate).query(argThat((String sql) -> sql.contains("INTERVAL 36 MONTH")), any(RowMapper.class));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void transactionAreaClassIncludesAllEightyFourSquareMeterRecords() {
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class))).thenReturn(List.of(
+                transaction(1L, "효자촌(럭키)", "성남시 분당구 서현동", 84.91, LocalDate.of(2025, 1, 1)),
+                transaction(2L, "효자촌(럭키)", "성남시 분당구 서현동", 84.97, LocalDate.of(2025, 2, 1)),
+                transaction(3L, "효자촌(럭키)", "성남시 분당구 서현동", 84.99, LocalDate.of(2025, 3, 1)),
+                transaction(4L, "효자촌(럭키)", "성남시 분당구 서현동", 85.0, LocalDate.of(2025, 4, 1))));
+
+        MapDataService.PropertySearchResult result = service.searchProperties(
+                null, "아파트", null, null, 5, null, "contract_date", "desc",
+                "selected_building_transactions", 1L, null, 84.0);
+
+        assertThat(result.properties()).extracting(item -> item.get("id"))
+                .containsExactly(3L, 2L, 1L);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void selectedDongTransactionHistoryUsesLegalDongCodeAndDateOrder() {
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class))).thenReturn(List.of(
+                transaction(1L, "A", "성남시 분당구 정자동", 84.91, LocalDate.of(2024, 3, 1)),
+                transaction(2L, "B", "성남시 분당구 수내동", 84.91, LocalDate.of(2025, 1, 1)),
+                transaction(3L, "C", "성남시 분당구 정자동", 84.91, LocalDate.of(2024, 7, 1))));
+
+        MapDataService.PropertySearchResult result = service.searchProperties(
+                null, "아파트", null, "41135103", 5, null, "contract_date", "desc",
+                "transactions", null, null, null);
+
+        assertThat(result.properties()).extracting(item -> item.get("id")).containsExactly(3L, 1L);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void namedBuildingHistoryRequiresExactNameAndDoesNotMixAmbiguousDongs() {
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class))).thenReturn(List.of(
+                transaction(1L, "효자촌(럭키)", "성남시 분당구 서현동", 84.91, LocalDate.of(2025, 1, 1)),
+                transaction(2L, "효자촌(럭키)2", "성남시 분당구 서현동", 84.91, LocalDate.of(2025, 2, 1)),
+                transaction(3L, "효자촌(럭키)", "성남시 분당구 정자동", 84.91, LocalDate.of(2025, 3, 1))));
+
+        MapDataService.PropertySearchResult result = service.searchProperties(
+                null, "아파트", null, null, 5, null, "contract_date", "desc",
+                "transactions", null, "효자촌 럭키", null);
+
+        assertThat(result.ambiguous()).isTrue();
+        assertThat(result.properties()).isEmpty();
+
+        MapDataService.PropertySearchResult resolved = service.searchProperties(
+                null, "아파트", null, "41135105", 5, null, "contract_date", "desc",
+                "transactions", null, "효자촌 럭키", null);
+        assertThat(resolved.properties()).extracting(item -> item.get("id")).containsExactly(1L);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void normalPriceRankingKeepsExistingTwelveMonthScope() {
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class))).thenReturn(List.of(
+                property(1L, "A", "아파트", 600_000_000L, "성남시 분당구 정자동"),
+                property(2L, "B", "아파트", 400_000_000L, "성남시 분당구 정자동")));
+
+        MapDataService.PropertySearchResult result = service.searchProperties(
+                null, "아파트", 700_000_000L, null, 2, null, "sale_price", "asc");
+
+        assertThat(result.properties()).extracting(item -> item.get("id")).containsExactly(2L, 1L);
+        verify(jdbcTemplate).query(argThat((String sql) -> sql.contains("INTERVAL 12 MONTH")), any(RowMapper.class));
     }
 
     @Test
@@ -147,6 +242,39 @@ class MapDataServiceTests {
         assertThat((Long) result.pois().getFirst().get("distance_m")).isBetween(100L, 120L);
     }
 
+    @SuppressWarnings("unchecked")
+    @Test
+    void countsAllPoisInsideSelectedLegalDongBeyondDisplayLimit() {
+        List<Map<String, Object>> schools = new java.util.ArrayList<>();
+        for (int index = 0; index < 12; index++) {
+            schools.add(poi("S" + index, "학교 " + index, "교육", "학교",
+                    "성남시 분당구 정자동", 37.370, 127.110));
+        }
+        schools.add(poi("OUT", "다른 동 학교", "교육", "학교",
+                "성남시 분당구 정자동", 37.395, 127.110));
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class))).thenReturn(schools);
+
+        MapDataService.PoiSearchResult result = service.searchPois(
+                "교육", "학교", null, null, null, null, null, 10, "41135103");
+
+        assertThat(result.totalCount()).isEqualTo(12);
+        assertThat(result.pois()).hasSize(10);
+        assertThat(result.pois()).extracting(item -> item.get("id")).doesNotContain("OUT");
+    }
+
+    @Test
+    void searchedSubwayPoiIdExistsInMapPoiList() {
+        MapDataService.PoiSearchResult result = service.searchPois(
+                "교통", "지하철역", null, null, null, null, null, 1);
+
+        assertThat(result.pois()).isNotEmpty();
+        String searchedId = result.pois().getFirst().get("id").toString();
+        assertThat(searchedId).startsWith("SUBWAY_");
+        assertThat(service.getMapPois().data())
+                .extracting(poi -> poi.get("poi_id"))
+                .contains(searchedId);
+    }
+
     private Map<String, Object> property(
             long id,
             String buildingName,
@@ -173,6 +301,15 @@ class MapDataServiceTests {
         property.put("latitude", latitude);
         property.put("longitude", longitude);
         return property;
+    }
+
+    private Map<String, Object> transaction(
+            long id, String buildingName, String district, double exclusiveArea, LocalDate contractDate) {
+        Map<String, Object> row = property(id, buildingName, "아파트", 500_000_000L, district);
+        row.put("exclusive_area", exclusiveArea);
+        row.put("contract_date", contractDate);
+        row.put("address", district + " 1");
+        return row;
     }
 
     private Map<String, Object> poi(
