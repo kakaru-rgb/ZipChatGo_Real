@@ -1,4 +1,6 @@
+import json
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -6,6 +8,25 @@ from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / ".env")
+
+
+def search_diagnostics_enabled() -> bool:
+    return os.getenv("AI_SEARCH_DIAGNOSTICS", "").strip().lower() in {"1", "true"}
+
+
+def safe_search_log(value: object) -> str:
+    rendered = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
+    for name in ("OPENAI_API_KEY", "DB_PASSWORD", "LAW_API_OC", "SUPABASE_SERVICE_KEY", "NAVER_MAPS_CLIENT_KEY"):
+        secret = os.getenv(name, "")
+        if secret:
+            rendered = rendered.replace(secret, "[REDACTED]")
+        rendered = re.sub(
+            rf'(?i)("?{name}"?\s*[:=]\s*"?)([^\s",}}]+)',
+            r'\1[REDACTED]',
+            rendered,
+        )
+    rendered = re.sub(r'\bsk-[A-Za-z0-9_-]{12,}\b', "[REDACTED]", rendered)
+    return rendered
 
 
 def get_openai_api_key() -> str:

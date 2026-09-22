@@ -1,4 +1,5 @@
 import json
+import logging
 import math
 import re
 from difflib import SequenceMatcher
@@ -7,6 +8,7 @@ from typing import Any
 from openai import OpenAI
 from pydantic import ValidationError
 
+from app.config import safe_search_log, search_diagnostics_enabled
 from app.providers.llm_provider import AgentReply, ToolHandler
 from app.schemas import (
     AddFavoriteAction,
@@ -1115,6 +1117,17 @@ class OpenAIProvider:
                 post_tool_instruction = None
                 if function_call.name == "search_properties" and search_properties:
                     arguments = json.loads(function_call.arguments)
+                    search_trace = f"{id(arguments):x}"
+                    if search_diagnostics_enabled():
+                        filters = app_state.get("filters") if app_state else None
+                        logging.getLogger("uvicorn.error").info(
+                            "[property-search:%s] message=%s selected_region=%s app_state_max_price=%s llm_arguments=%s",
+                            search_trace,
+                            safe_search_log(message),
+                            safe_search_log(app_state.get("selected_region") if app_state else None),
+                            safe_search_log(filters.get("max_price") if isinstance(filters, dict) else None),
+                            safe_search_log(function_call.arguments),
+                        )
                     arguments.pop("selected_property_id", None)
                     arguments.pop("legal_dong_code", None)
                     if search_limit is not None:
@@ -1157,7 +1170,19 @@ class OpenAIProvider:
                     ):
                         result = {"status": "rejected", "reason": "Select an apartment or legal dong for transaction history."}
                     else:
+                        if search_diagnostics_enabled():
+                            logging.getLogger("uvicorn.error").info(
+                                "[property-search:%s] provider_arguments=%s",
+                                search_trace,
+                                safe_search_log(arguments),
+                            )
                         result = search_properties(arguments)
+                        if search_diagnostics_enabled():
+                            logging.getLogger("uvicorn.error").info(
+                                "[property-search:%s] total_count=%s",
+                                search_trace,
+                                result.get("total_count"),
+                            )
                     searched_properties = result.get("properties", [])
                     latest_lookup_properties = searched_properties
                     property_lookup_completed = True

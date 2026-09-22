@@ -1,7 +1,9 @@
+import logging
 from typing import Any
 
 import httpx
 
+from app.config import safe_search_log, search_diagnostics_enabled
 from app.schemas import (
     PropertiesByIdsArguments,
     PropertiesByIdsResult,
@@ -56,6 +58,13 @@ class PropertySearchTool:
                     "north": arguments.map_bounds.north,
                     "east": arguments.map_bounds.east,
                 }
+            )
+
+        if search_diagnostics_enabled():
+            logging.getLogger("uvicorn.error").info(
+                "[property-search:%x] spring_query_params=%s",
+                id(raw_arguments),
+                safe_search_log(params),
             )
 
         try:
