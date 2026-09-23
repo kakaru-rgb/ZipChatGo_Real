@@ -10,10 +10,15 @@ import org.springframework.web.client.RestClient;
 public class AiClientConfig {
 
 	@Bean
-	RestClient aiRestClient(@Value("${ai.server.base-url}") String baseUrl) {
-		return RestClient.builder()
+	RestClient aiRestClient(
+			@Value("${ai.server.base-url}") String baseUrl,
+			@Value("${internal.api-key:}") String internalApiKey) {
+		RestClient.Builder builder = RestClient.builder()
 				.baseUrl(baseUrl)
-				.requestFactory(new SimpleClientHttpRequestFactory())
-				.build();
+				.requestFactory(new SimpleClientHttpRequestFactory());
+		if (!internalApiKey.isBlank()) {
+			builder.defaultHeader("X-Internal-API-Key", internalApiKey);
+		}
+		return builder.build();
 	}
 }

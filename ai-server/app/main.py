@@ -1,9 +1,13 @@
 from functools import lru_cache
+import secrets
+from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, status
 from openai import APIError
 
 from app.config import (
+    api_docs_enabled,
+    get_internal_api_key,
     get_law_vector_store_id,
     get_openai_api_key,
     get_openai_model,
@@ -34,10 +38,35 @@ from app.tools.real_estate_law import (
 )
 from app.tools.transit_station import TransitStationSearchError, TransitStationTool
 
-app = FastAPI(title="ZipChatGo AI Server")
+_docs_enabled = api_docs_enabled()
+app = FastAPI(
+    title="ZipChatGo AI Server",
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
+)
 
 
-@app.post("/agent/test")
+def verify_internal_api_key(
+    x_internal_api_key: Annotated[str | None, Header()] = None,
+) -> None:
+    expected_key = get_internal_api_key()
+    if expected_key and (
+        x_internal_api_key is None
+        or not secrets.compare_digest(x_internal_api_key, expected_key)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid internal API key",
+        )
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.post("/agent/test", dependencies=[Depends(verify_internal_api_key)])
 def agent_test() -> dict[str, str]:
     return {"message": "hello"}
 
@@ -93,7 +122,11 @@ def get_real_estate_law_search_tool() -> RealEstateLawSearchTool:
     return RealEstateLawSearchTool(get_law_retriever())
 
 
-@app.post("/agent/chat", response_model=ChatResponse)
+@app.post(
+    "/agent/chat",
+    response_model=ChatResponse,
+    dependencies=[Depends(verify_internal_api_key)],
+)
 def agent_chat(
     request: ChatRequest,
     provider: LLMProvider = Depends(get_openai_provider),

@@ -1,0 +1,15 @@
+.git
+.github
+.gradle
+.idea
+.vscode
+.env
+.env.*
+!.env.example
+ai-server
+build
+docs
+*.log
+**/__pycache__
+**/.pytest_cache
+**/.venv

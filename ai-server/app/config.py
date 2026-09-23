@@ -16,7 +16,7 @@ def search_diagnostics_enabled() -> bool:
 
 def safe_search_log(value: object) -> str:
     rendered = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
-    for name in ("OPENAI_API_KEY", "DB_PASSWORD", "LAW_API_OC", "SUPABASE_SERVICE_KEY", "NAVER_MAPS_CLIENT_KEY"):
+    for name in ("OPENAI_API_KEY", "DB_PASSWORD", "LAW_API_OC", "SUPABASE_SERVICE_KEY", "NAVER_MAPS_CLIENT_KEY", "INTERNAL_API_KEY"):
         secret = os.getenv(name, "")
         if secret:
             rendered = rendered.replace(secret, "[REDACTED]")
@@ -57,3 +57,16 @@ def get_spring_server_base_url() -> str:
         os.getenv("SPRING_SERVER_BASE_URL", "http://127.0.0.1:8080").strip()
         or "http://127.0.0.1:8080"
     )
+
+
+def get_internal_api_key() -> str:
+    return os.getenv("INTERNAL_API_KEY", "").strip()
+
+
+def api_docs_enabled() -> bool:
+    return os.getenv("ENABLE_API_DOCS", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }

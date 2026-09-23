@@ -1,0 +1,77 @@
+services:
+  - type: web
+    name: zipchatgo-ai
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./ai-server/Dockerfile
+    dockerContext: ./ai-server
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    buildFilter:
+      paths:
+        - ai-server/**
+        - render.yaml
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: LAW_VECTOR_STORE_ID
+        sync: false
+      - key: LAW_API_OC
+        sync: false
+      - key: SPRING_SERVER_BASE_URL
+        sync: false
+      - key: INTERNAL_API_KEY
+        sync: false
+      - key: ENABLE_API_DOCS
+        value: "false"
+
+  - type: web
+    name: zipchatgo-spring
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    buildFilter:
+      paths:
+        - src/**
+        - build.gradle
+        - settings.gradle
+        - gradle/**
+        - gradlew
+        - gradlew.bat
+        - Dockerfile
+        - .dockerignore
+        - render.yaml
+    envVars:
+      - key: AI_SERVER_URL
+        sync: false
+      - key: INTERNAL_API_KEY
+        sync: false
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_DATABASE
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: MOLIT_SERVICE_KEY
+        sync: false
+      - key: DEFAULT_LAWD_CD
+        value: "41117"
+      - key: NAVER_MAPS_CLIENT_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        sync: false
