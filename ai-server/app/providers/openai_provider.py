@@ -507,6 +507,7 @@ AGENT_TOOLS = [
 
 UI_ACTION_INSTRUCTIONS = """
 For transaction-history questions, reuse search_properties with search_mode=transactions, or selected_building_transactions when referring to the currently selected apartment. The selected record's ID is resolved by the server; never guess its building name. For the currently selected legal dong use transactions with keyword=null and exact_building_name=null; the server adds its code. Use exact_building_name for explicitly named complexes, exclusive_area for a requested square-meter class, and contract_date descending for recency. If the tool reports ambiguous=true, ask the user to specify the legal dong instead of combining complexes. The available transaction data covers Bundang-gu and at most the last three years; say so for older requests and never invent earlier transactions. Report only fields actually returned by the tool.
+When a property Tool result contains sale_price_display, copy that display string exactly when stating a price. Do not calculate 억/만원 from sale_price yourself; sale_price is the canonical numeric value in Korean won used for filtering and sorting.
 Use search_poi for questions about nearby or regional facilities. The supported broad categories are 공공기관, 교육, 교통, 의료, and 중개. Use subcategory or keyword for actual finer types such as schools, bus stops, subway stations, hospitals, and public offices. A requested finer type may legitimately return zero results; never claim that unavailable types exist.
 For the currently selected region or dong, choose search_poi location_source=selected_region. This searches its entire verified legal-dong boundary, not a radius around map_center or selected_property. If selected_region is absent, ask the user to select a region; do not guess one from map_center. For an explicitly named other region choose location_source=region. For 'around this property' choose location_source=selected_property. Its ID and coordinates are verified from App State or the property lookup; do not guess coordinates. Natural-language interpretation belongs to Tool Calling; do not ask Python to classify phrases such as nearby or closest.
 When the user asks only how many POIs exist, answer from total_count, never from the length of the limited pois list. Do not list every returned POI. For nearby lists, provide only the requested count with name, distance when returned, and minimal location information. If total_count is zero, say no matching POI was found and do not switch to another region or category unless the user explicitly requested a fallback.
@@ -1177,6 +1178,10 @@ class OpenAIProvider:
                                 safe_search_log(arguments),
                             )
                         result = search_properties(arguments)
+                        post_tool_instruction = (
+                            "매물 가격을 답변할 때는 각 결과의 sale_price_display를 그대로 복사하세요. "
+                            "sale_price 숫자를 억/만원으로 직접 환산하지 마세요."
+                        )
                         if search_diagnostics_enabled():
                             logging.getLogger("uvicorn.error").info(
                                 "[property-search:%s] total_count=%s",

@@ -2,6 +2,7 @@ let map;
 let allProperties = [];
 let filteredProperties = [];
 let selectedProperty = null;
+let selectedPropertyMarker = null;
 let displayedPropertyIds = [];
 let propertyListScrollTop = 0;
 
@@ -2010,6 +2011,7 @@ function renderList(items, { openMobileList = false } = {}) {
     const favoriteClass = isFavoriteProperty(item) ? " is-visible" : "";
     const card = document.createElement("div");
     card.className = "property-card";
+    card.dataset.propertyId = String(item.id);
     card.tabIndex = 0;
     card.setAttribute("role", "button");
     card.setAttribute("aria-label", `${propertyName} 상세정보 보기`);
@@ -2497,6 +2499,8 @@ function showPropertyListView({ restoreScroll = false } = {}) {
   const detailWasOpen = !detailView.hidden;
 
   selectedProperty = null;
+  syncSelectedPropertyCard(null);
+  clearSelectedPropertyMarker();
   listView.hidden = false;
   detailView.hidden = true;
   sidebar.classList.remove("is-detail-open");
@@ -2519,6 +2523,8 @@ function openPropertyDetail(item) {
 
   propertyListScrollTop = sidebar.scrollTop;
   selectedProperty = item;
+  syncSelectedPropertyCard(item.id);
+  showSelectedPropertyMarker(item);
   listView.hidden = true;
   detailView.hidden = false;
   sidebar.classList.add("is-detail-open");
@@ -2530,6 +2536,42 @@ function openPropertyDetail(item) {
   }
 
   saveMapViewportToHistory();
+}
+
+function syncSelectedPropertyCard(propertyId) {
+  const selectedId = String(propertyId);
+  document.querySelectorAll("#propertyList .property-card[data-property-id]").forEach(card => {
+    card.classList.toggle("is-selected", card.dataset.propertyId === selectedId);
+  });
+}
+
+function showSelectedPropertyMarker(item) {
+  clearSelectedPropertyMarker();
+  if (!item || !Number.isFinite(Number(item.latitude)) || !Number.isFinite(Number(item.longitude))) return;
+
+  selectedPropertyMarker = new naver.maps.Marker({
+    position: new naver.maps.LatLng(item.latitude, item.longitude),
+    map,
+    clickable: !distanceMeasureActive,
+    zIndex: 300,
+    icon: {
+      content: renderPropertyMarkerContent(item, true),
+      anchor: new naver.maps.Point(
+        PROPERTY_MARKER_WIDTH / 2,
+        PROPERTY_MARKER_HEIGHT / 2
+      )
+    }
+  });
+
+  naver.maps.Event.addListener(selectedPropertyMarker, "click", () => {
+    if (!distanceMeasureActive) renderList([item], { openMobileList: true });
+  });
+}
+
+function clearSelectedPropertyMarker() {
+  if (!selectedPropertyMarker) return;
+  selectedPropertyMarker.setMap(null);
+  selectedPropertyMarker = null;
 }
 
 function renderPropertyDetail(item) {

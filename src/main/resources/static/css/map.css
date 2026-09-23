@@ -276,6 +276,11 @@ aside.is-detail-open {
   transform: translateY(-1px);
 }
 
+.property-card.is-selected {
+  background: rgba(30, 136, 255, 0.12);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
 .property-card:focus-visible {
   outline: 3px solid rgba(30, 136, 255, 0.18);
   outline-offset: -2px;

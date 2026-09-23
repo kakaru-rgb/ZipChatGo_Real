@@ -5,7 +5,11 @@ from unittest.mock import Mock, patch
 import httpx
 import pytest
 
-from app.tools.property_search import PropertySearchError, PropertySearchTool
+from app.tools.property_search import (
+    PropertySearchError,
+    PropertySearchTool,
+    format_sale_price,
+)
 from app.providers.openai_provider import OpenAIProvider
 
 
@@ -46,6 +50,22 @@ def test_search_calls_spring_api_with_validated_arguments() -> None:
     )
     assert result["total_count"] == 1
     assert result["properties"][0]["id"] == 427
+    assert result["properties"][0]["sale_price_display"] == "7억 8,000만원"
+
+
+@pytest.mark.parametrize(
+    ("sale_price", "expected"),
+    [
+        (450_000_000, "4억 5,000만원"),
+        (583_000_000, "5억 8,300만원"),
+        (590_000_000, "5억 9,000만원"),
+    ],
+)
+def test_format_sale_price_uses_canonical_won_unit(
+    sale_price: int,
+    expected: str,
+) -> None:
+    assert format_sale_price(sale_price) == expected
 
 
 def test_search_raises_safe_error_when_spring_is_unavailable() -> None:
@@ -142,6 +162,7 @@ def test_get_by_ids_calls_spring_and_keeps_missing_ids() -> None:
         params={"ids": "427,903"},
     )
     assert result["properties"][0]["id"] == 427
+    assert result["properties"][0]["sale_price_display"] == "7억 8,000만원"
     assert result["missing_ids"] == [903]
 
 

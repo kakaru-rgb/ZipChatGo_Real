@@ -142,7 +142,7 @@
     return content;
   }
 
-  function appendAgentAnswer(text, actions = []) {
+  function appendAgentAnswer(text, actions = [], responseContext = null) {
     document.getElementById("aiAgentLoading")?.remove();
 
     const answer = document.createElement("article");
@@ -153,44 +153,79 @@
     icon.dataset.aiBrandIcon = "";
     icon.setAttribute("aria-hidden", "true");
 
-    answer.append(icon, renderSafeMarkdown(text));
-
-    const propertyActions = renderPropertyActionButtons(actions);
-    if (propertyActions) answer.appendChild(propertyActions);
+    const content = renderSafeMarkdown(text);
+    bindPropertyTitleLinks(content, actions, responseContext);
+    answer.append(icon, content);
 
     messages.appendChild(answer);
     renderBrandIcons();
   }
 
-  function renderPropertyActionButtons(actions) {
-    if (!Array.isArray(actions)) return null;
+  function bindPropertyTitleLinks(content, actions, responseContext) {
+    if (!content || !Array.isArray(actions) || !responseContext) return;
 
-    const propertyIds = actions
+    const highlightedIds = new Set(actions
       .filter(action => action?.type === "HIGHLIGHT_PROPERTIES")
       .flatMap(action => Array.isArray(action.property_ids) ? action.property_ids : [])
       .map(String)
-      .filter((propertyId, index, ids) => ids.indexOf(propertyId) === index)
-      .slice(0, 5);
+      .filter(Boolean));
+    if (!highlightedIds.size) return;
 
-    if (!propertyIds.length) return null;
+    const propertyIds = (responseContext.recent_property_ids || [])
+      .map(String)
+      .filter(propertyId => highlightedIds.has(propertyId));
+    if (!propertyIds.length) return;
 
-    const container = document.createElement("div");
-    container.className = "ai-agent-property-actions";
+    const orderedList = Array.from(content.querySelectorAll("ol")).find(list => (
+      Array.from(list.children).filter(child => child.tagName === "LI").length >= propertyIds.length
+    ));
+    if (!orderedList) return;
 
-    propertyIds.forEach((propertyId, index) => {
+    const listItems = Array.from(orderedList.children)
+      .filter(child => child.tagName === "LI")
+      .slice(0, propertyIds.length);
+
+    listItems.forEach((item, index) => {
+      const title = item.querySelector(":scope > strong, :scope > p > strong");
+      if (!title) return;
+
       const button = document.createElement("button");
       button.type = "button";
-      button.textContent = `매물 ${index + 1} 상세보기`;
-      button.addEventListener("click", () => {
-        recentContext.last_referenced_property_id = Number(propertyId);
-        window.zipchatgoMapActions?.execute?.([
-          { type: "OPEN_PROPERTY", property_id: propertyId }
-        ]);
-      });
-      container.appendChild(button);
+      button.className = "ai-property-title-link";
+      button.dataset.propertyId = propertyIds[index];
+      button.textContent = title.textContent;
+      button.addEventListener("click", () => openPropertyFromAiChat(propertyIds[index]));
+      title.replaceWith(button);
     });
+  }
 
-    return container;
+  function openPropertyFromAiChat(propertyId) {
+    const normalizedId = Number(propertyId);
+    if (!Number.isInteger(normalizedId) || normalizedId < 1) return;
+
+    recentContext.last_referenced_property_id = normalizedId;
+    window.zipchatgoMapActions?.execute?.([
+      { type: "OPEN_PROPERTY", property_id: String(normalizedId) }
+    ]);
+  }
+
+  function normalizeRecentContext(value) {
+    if (!value || typeof value !== "object") {
+      return { recent_property_ids: [], last_referenced_property_id: null, recent_properties: [] };
+    }
+
+    return {
+      recent_property_ids: Array.isArray(value.recent_property_ids)
+        ? value.recent_property_ids.map(Number).filter(Number.isInteger).slice(0, 10)
+        : [],
+      last_referenced_property_id: value.last_referenced_property_id != null
+        && Number.isInteger(Number(value.last_referenced_property_id))
+        ? Number(value.last_referenced_property_id)
+        : null,
+      recent_properties: Array.isArray(value.recent_properties)
+        ? value.recent_properties.slice(0, 10)
+        : []
+    };
   }
 
   function getAppState() {
@@ -227,21 +262,11 @@
       }
 
       const actions = Array.isArray(data.actions) ? data.actions : [];
-      appendAgentAnswer(data.message, actions);
-      if (data.recent_context && typeof data.recent_context === "object") {
-        recentContext = {
-          recent_property_ids: Array.isArray(data.recent_context.recent_property_ids)
-            ? data.recent_context.recent_property_ids.map(Number).filter(Number.isInteger).slice(0, 10)
-            : [],
-          last_referenced_property_id: data.recent_context.last_referenced_property_id != null
-            && Number.isInteger(Number(data.recent_context.last_referenced_property_id))
-            ? Number(data.recent_context.last_referenced_property_id)
-            : null,
-          recent_properties: Array.isArray(data.recent_context.recent_properties)
-            ? data.recent_context.recent_properties.slice(0, 10)
-            : []
-        };
-      }
+      const responseContext = data.recent_context && typeof data.recent_context === "object"
+        ? normalizeRecentContext(data.recent_context)
+        : recentContext;
+      appendAgentAnswer(data.message, actions, responseContext);
+      recentContext = responseContext;
       addHistoryMessage("user", text);
       addHistoryMessage("assistant", data.message);
 
