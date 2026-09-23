@@ -137,29 +137,29 @@
 }
 .ai-agent-markdown a:hover { color: #1d4ed8; }
 
-.ai-agent-property-actions {
-  margin-top: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-.ai-agent-property-actions button {
-  min-height: 34px;
-  padding: 7px 11px;
-  border: 1px solid #cbd5ff;
-  border-radius: 17px;
-  background: #f5f7ff;
-  color: #3853dc;
+.ai-property-title-link {
+  padding: 0;
+  border: 0;
+  color: #2563eb;
+  background: transparent;
   font: inherit;
-  font-size: 12px;
-  font-weight: 700;
+  font-weight: 800;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: rgba(37, 99, 235, 0.38);
+  text-underline-offset: 3px;
   cursor: pointer;
 }
 
-.ai-agent-property-actions button:hover {
-  border-color: #7185ff;
-  background: #edf1ff;
+.ai-property-title-link:hover {
+  color: #1d4ed8;
+  text-decoration-color: currentColor;
+}
+
+.ai-property-title-link:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 2px;
 }
 .ai-agent-answer h2 {
   margin: 1px 0 2px;

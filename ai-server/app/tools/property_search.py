@@ -16,6 +16,33 @@ class PropertySearchError(RuntimeError):
     """Raised when the Spring property search API cannot provide a valid result."""
 
 
+def format_sale_price(sale_price: Any) -> str | None:
+    """Format the DB/API sale price, whose canonical unit is Korean won."""
+    if isinstance(sale_price, bool) or not isinstance(sale_price, (int, float)):
+        return None
+
+    price = int(sale_price)
+    if price < 0:
+        return None
+
+    eok, remainder = divmod(price, 100_000_000)
+    man = remainder // 10_000
+    if eok and man:
+        return f"{eok}억 {man:,}만원"
+    if eok:
+        return f"{eok}억원"
+    if man:
+        return f"{man:,}만원"
+    return f"{price:,}원"
+
+
+def _add_sale_price_displays(properties: list[dict[str, Any]]) -> None:
+    for item in properties:
+        display = format_sale_price(item.get("sale_price"))
+        if display is not None:
+            item["sale_price_display"] = display
+
+
 class PropertySearchTool:
     def __init__(
         self,
@@ -74,7 +101,9 @@ class PropertySearchTool:
         except (httpx.HTTPError, ValueError) as exception:
             raise PropertySearchError("Spring property search request failed") from exception
 
-        return result.model_dump(exclude_defaults=True)
+        output = result.model_dump(exclude_defaults=True)
+        _add_sale_price_displays(output.get("properties", []))
+        return output
 
     def get_by_ids(self, raw_arguments: dict[str, Any]) -> dict[str, Any]:
         arguments = PropertiesByIdsArguments.model_validate(raw_arguments)
@@ -92,4 +121,6 @@ class PropertySearchTool:
         except (httpx.HTTPError, ValueError) as exception:
             raise PropertySearchError("Spring property lookup request failed") from exception
 
-        return result.model_dump()
+        output = result.model_dump()
+        _add_sale_price_displays(output.get("properties", []))
+        return output
