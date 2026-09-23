@@ -1,0 +1,197 @@
+from fastapi.testclient import TestClient
+import httpx
+from openai import APIConnectionError
+
+import app.main as main
+from app.main import app, get_openai_provider
+from app.providers.openai_provider import AgentReply
+from app.schemas import HighlightPropertiesAction
+
+
+client = TestClient(app)
+
+
+def test_agent_test_returns_hello() -> None:
+    response = client.post("/agent/test")
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "hello"}
+
+
+class FakeOpenAIProvider:
+    def __init__(self) -> None:
+        self.app_state = None
+        self.get_adjacent_legal_dongs = None
+        self.get_properties_by_ids = None
+        self.search_real_estate_law = None
+        self.history = None
+        self.recent_context = None
+
+    def generate(
+        self,
+        message: str,
+        app_state=None,
+        history=None,
+        recent_context=None,
+        search_properties=None,
+        get_properties_by_ids=None,
+        find_transit_station=None,
+        get_adjacent_legal_dongs=None,
+        search_real_estate_law=None,
+    ) -> AgentReply:
+        self.app_state = app_state
+        self.history = history
+        self.recent_context = recent_context
+        self.get_adjacent_legal_dongs = get_adjacent_legal_dongs
+        self.get_properties_by_ids = get_properties_by_ids
+        self.search_real_estate_law = search_real_estate_law
+        return AgentReply(
+            message=f"AI response to: {message}",
+            actions=[HighlightPropertiesAction(property_ids=[427])],
+        )
+
+
+def test_agent_chat_returns_provider_response() -> None:
+    provider = FakeOpenAIProvider()
+    app.dependency_overrides[get_openai_provider] = lambda: provider
+    try:
+        response = client.post(
+            "/agent/chat",
+            json={
+                "message": "안녕하세요",
+                "appState": {
+                    "current_page": "map",
+                    "map_center": {"lat": 37.4, "lng": 127.15},
+                    "zoom": 1,
+                    "current_region": "경기도 성남시 분당구 백현동",
+                    "center_address": "경기도 성남시 분당구 판교역로",
+                    "map_bounds": {
+                        "south": 37.3,
+                        "west": 127.0,
+                        "north": 37.5,
+                        "east": 127.3,
+                    },
+                    "current_legal_dong": {
+                        "type": "legal_dong",
+                        "code": "41135110",
+                        "name": "백현동",
+                        "full_name": "경기도 성남시 분당구 백현동",
+                        "center": {"lat": 37.39, "lng": 127.11},
+                        "bounds": {
+                            "south": 37.37,
+                            "west": 127.09,
+                            "north": 37.41,
+                            "east": 127.13,
+                        },
+                    },
+                    "selected_region": {
+                        "type": "legal_dong",
+                        "code": "41135103",
+                        "name": "정자동",
+                        "full_name": "경기도 성남시 분당구 정자동",
+                        "center": {"lat": 37.37, "lng": 127.11},
+                        "bounds": {
+                            "south": 37.35,
+                            "west": 127.09,
+                            "north": 37.39,
+                            "east": 127.13,
+                        },
+                    },
+                    "selected_property_id": "427",
+                    "selected_property": {
+                        "id": "427",
+                        "title": "정자동 테스트 매물",
+                        "building_name": "정든마을 테스트단지",
+                        "property_type": "아파트",
+                        "sale_price": 780000000,
+                        "address": "경기도 성남시 분당구 정자동 1",
+                    },
+                    "favorite_property_ids": ["182", "427"],
+                    "filters": {
+                        "keyword": "정자동",
+                        "property_type": "아파트",
+                        "max_price": 800000000,
+                    },
+                },
+                "history": [
+                    {"role": "user", "content": "분당 매물을 찾아줘"},
+                    {"role": "assistant", "content": "매물을 찾았습니다."},
+                ],
+                "recentContext": {
+                    "recent_property_ids": [101, 205],
+                    "last_referenced_property_id": 205,
+                },
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "message": "AI response to: 안녕하세요",
+        "actions": [
+            {"type": "HIGHLIGHT_PROPERTIES", "property_ids": [427]}
+        ],
+        "recent_context": {
+            "recent_property_ids": [],
+            "last_referenced_property_id": None,
+            "recent_properties": [],
+        },
+    }
+    assert provider.app_state["selected_property_id"] == "427"
+    assert provider.app_state["selected_property"]["building_name"] == "정든마을 테스트단지"
+    assert provider.app_state["selected_property"]["sale_price"] == 780000000
+    assert provider.app_state["selected_region"]["code"] == "41135103"
+    assert provider.app_state["current_legal_dong"]["name"] == "백현동"
+    assert provider.app_state["current_region"] == "경기도 성남시 분당구 백현동"
+    assert provider.app_state["filters"]["max_price"] == 800000000
+    assert provider.history[0]["content"] == "분당 매물을 찾아줘"
+    assert provider.recent_context["recent_property_ids"] == [101, 205]
+    assert callable(provider.get_adjacent_legal_dongs)
+    assert callable(provider.get_properties_by_ids)
+    assert callable(provider.search_real_estate_law)
+
+
+def test_agent_chat_rejects_empty_message() -> None:
+    response = client.post("/agent/chat", json={"message": ""})
+
+    assert response.status_code == 422
+
+
+def test_agent_chat_returns_503_when_api_key_is_missing(monkeypatch) -> None:
+    get_openai_provider.cache_clear()
+    monkeypatch.setattr(main, "get_openai_api_key", lambda: "")
+    try:
+        response = client.post("/agent/chat", json={"message": "안녕하세요"})
+    finally:
+        get_openai_provider.cache_clear()
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "OPENAI_API_KEY is not configured"}
+
+
+class FailingOpenAIProvider:
+    def generate(
+        self,
+        message: str,
+        app_state=None,
+        history=None,
+        recent_context=None,
+        search_properties=None,
+        get_properties_by_ids=None,
+        find_transit_station=None,
+        get_adjacent_legal_dongs=None,
+        search_real_estate_law=None,
+    ) -> AgentReply:
+        raise APIConnectionError(request=httpx.Request("POST", "https://api.openai.com"))
+
+
+def test_agent_chat_returns_502_when_openai_request_fails() -> None:
+    app.dependency_overrides[get_openai_provider] = lambda: FailingOpenAIProvider()
+    try:
+        response = client.post("/agent/chat", json={"message": "안녕하세요"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "OpenAI API request failed"}

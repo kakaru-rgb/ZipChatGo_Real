@@ -1,0 +1,37 @@
+{
+  "source_run_id": "law-v2-c22-luna-targeted-0844010e23cd",
+  "question_id": 3,
+  "api_calls": 0,
+  "vector_store_api_calls": 0,
+  "agent_reruns": 0,
+  "c22_result": "rejected",
+  "c22_failure_reason": "ungrounded_law_article_pair",
+  "c23_result": "passed",
+  "c23_response_role": "grounded_answer",
+  "c23_failure_reason": "",
+  "c23_citation_trace": [
+    {
+      "raw_citation": "주택임대차보호법 제6조의3",
+      "parsed_law_name": "주택임대차보호법",
+      "parsed_article_number": "제6조의3",
+      "citation_role": "primary_grounding",
+      "parent_retrieval_pair": null,
+      "parent_text_match": false,
+      "matched_parent_chunk_count": 0,
+      "validation_decision": "allowed_retrieval_pair"
+    },
+    {
+      "raw_citation": "「주택임대차보호법」 제7조",
+      "parsed_law_name": "주택임대차보호법",
+      "parsed_article_number": "제7조",
+      "citation_role": "dependent_parent_cross_reference",
+      "parent_retrieval_pair": {
+        "law_name": "주택임대차보호법",
+        "article_number": "제6조의3"
+      },
+      "parent_text_match": true,
+      "matched_parent_chunk_count": 1,
+      "validation_decision": "allowed_same_law_parent_cross_reference"
+    }
+  ]
+}
